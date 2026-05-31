@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "54";
+const ASSET_VERSION = "55";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -528,6 +528,7 @@ function preparePuzzle(puzzle, index) {
     activatedAt: 0,
     lastSquares: [],
     reviewPly: null,
+    replyTimer: 0,
     advanceTimer: 0,
     solution,
     panel: null,
@@ -552,7 +553,10 @@ function buildFeed({ startPuzzleId = session.lastPuzzleId } = {}) {
   }
 
   session.states.forEach((state) => {
-    if (state) clearAutoAdvance(state);
+    if (state) {
+      clearReplyTimer(state);
+      clearAutoAdvance(state);
+    }
   });
   session.puzzles = session.feedMode === "saved" ? savedPuzzles : unsolved.length ? unsolved : ranked;
   rebuildPuzzleIndex();
@@ -912,6 +916,7 @@ function mountBoard(state) {
 function unmountBoard(index) {
   const state = session.states[index];
   if (!state?.board) return;
+  clearReplyTimer(state);
   state.panel?.replaceChildren();
   state.panel?.remove();
   if (session.panels[index] === state.panel) delete session.panels[index];
@@ -1256,6 +1261,7 @@ function handleSquareTap(state, square) {
 }
 
 function playExpectedMove(state, actor) {
+  clearReplyTimer(state);
   clearReview(state, { render: false });
   const move = applyUci(state.game, state.moves[state.cursor]);
   state.lastSquares = [move.from, move.to];
@@ -1280,7 +1286,9 @@ function playExpectedMove(state, actor) {
 
   if (actor !== "user") return;
 
-  window.setTimeout(() => {
+  state.replyTimer = window.setTimeout(() => {
+    state.replyTimer = 0;
+    if (session.states[state.index] !== state) return;
     if (session.active === state.index && state.cursor < state.moves.length && !state.solved) {
       state.panel.classList.remove("replying");
       playExpectedMove(state, "reply");
@@ -1380,6 +1388,13 @@ function clearAutoAdvance(state) {
   if (!state?.advanceTimer) return;
   window.clearTimeout(state.advanceTimer);
   state.advanceTimer = 0;
+}
+
+function clearReplyTimer(state) {
+  state?.panel?.classList.remove("replying");
+  if (!state?.replyTimer) return;
+  window.clearTimeout(state.replyTimer);
+  state.replyTimer = 0;
 }
 
 function markFeedback(state, text) {
@@ -1677,9 +1692,10 @@ function setActive(index) {
   const previousIndex = session.active;
   const previousState = session.states[previousIndex];
   if (previousState) {
+    clearReplyTimer(previousState);
     previousState.selected = null;
     previousState.badSquares = [];
-    previousState.panel?.classList.remove("select", "shake", "replying");
+    previousState.panel?.classList.remove("select", "shake");
     clearAutoAdvance(previousState);
     renderBoard(previousState);
   }
@@ -1731,6 +1747,7 @@ function snapToIndex(index, behavior = "smooth") {
 function revealActive() {
   const state = ensureState(session.active);
   if (!state) return;
+  clearReplyTimer(state);
   clearAutoAdvance(state);
   if (state.solved) return;
   if (!state.revealed && !state.solved) {
@@ -1754,6 +1771,7 @@ function revealActive() {
 function resetActive() {
   const old = ensureState(session.active);
   if (!old) return;
+  clearReplyTimer(old);
   clearAutoAdvance(old);
   const fresh = preparePuzzle(old.puzzle, old.index);
   fresh.panel = old.panel;
@@ -1808,11 +1826,12 @@ function createFatalErrorPanel() {
 function skipActive() {
   const state = ensureState(session.active);
   if (!state) return;
+  clearReplyTimer(state);
   clearAutoAdvance(state);
   clearReview(state, { render: false });
   state.selected = null;
   state.badSquares = [];
-  state.panel.classList.remove("select", "shake", "replying");
+  state.panel.classList.remove("select", "shake");
   renderBoard(state);
   if (session.feedMode === "saved") {
     markFeedback(state, "");

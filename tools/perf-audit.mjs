@@ -85,7 +85,7 @@ try {
     })`);
 
     if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
-    if (before.perf.version !== "54" || jump.perf.version !== "54") errors.push(`${viewport.name}: loaded app version is not 54`);
+    if (before.perf.version !== "55" || jump.perf.version !== "55") errors.push(`${viewport.name}: loaded app version is not 55`);
     if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
     if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
     if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);
@@ -118,6 +118,7 @@ try {
   const saveControl = await saveControlSnapshot(cdp, appPort);
   const savedFeed = await savedFeedSnapshot(cdp, appPort);
   const wheelSnap = await wheelSnapSnapshot(cdp, appPort);
+  const resetRetry = await resetRetrySnapshot(cdp, appPort);
 
   if (adaptiveHigh.target <= adaptiveLow.target + 320) {
     errors.push(`adaptive target only increased from ${adaptiveLow.target} to ${adaptiveHigh.target}`);
@@ -140,8 +141,12 @@ try {
   if (savedFeed.countText !== "1") errors.push(`saved library count did not show 1: ${savedFeed.countText || "empty"}`);
   if (savedFeed.backMode !== "all") errors.push(`saved library did not return to all puzzles: ${savedFeed.backMode || "none"}`);
   if (wheelSnap.active !== "1") errors.push(`wheel gesture moved ${wheelSnap.active || "nowhere"} panels; expected 1`);
+  if (!resetRetry.moveChangedBoard) errors.push("retry audit did not make a puzzle move before resetting");
+  if (!resetRetry.resetRestoredBoard) errors.push("retry button did not restore the board");
+  if (!resetRetry.replyStayedCanceled) errors.push("retry button allowed a delayed reply after reset");
+  if (resetRetry.replyingClass) errors.push("retry button left the puzzle in replying state");
 
-  console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry, reviewLine, saveControl, savedFeed, wheelSnap }, null, 2));
+  console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry, reviewLine, saveControl, savedFeed, wheelSnap, resetRetry }, null, 2));
   await cdp.close();
 } finally {
   chrome.kill("SIGTERM");
@@ -403,6 +408,59 @@ async function wheelSnapSnapshot(cdp, appPort) {
             scrollTop: Math.round(feed.scrollTop)
           }), 620);
         }
+      }, 70);
+    })`
+  );
+}
+
+async function resetRetrySnapshot(cdp, appPort) {
+  await cdp
+    .send("Storage.clearDataForOrigin", {
+      origin: `http://127.0.0.1:${appPort}`,
+      storageTypes: "all"
+    })
+    .catch(() => {});
+
+  await navigate(cdp, `http://127.0.0.1:${appPort}/?perf=reset-retry`);
+  await waitReady(cdp);
+  return evaluate(
+    cdp,
+    `new Promise(async (resolve) => {
+      const activePanel = () => document.querySelector(".reel.active");
+      const boardSignature = () =>
+        Array.from(activePanel()?.querySelectorAll("[data-square]") || [])
+          .map((square) => [square.dataset.square, square.getAttribute("aria-label") || "", square.className].join(":"))
+          .join("|");
+      const puzzleId = activePanel()?.dataset.puzzleId || "";
+      const { PUZZLES } = await import("./puzzles.js?v=55");
+      const puzzle = PUZZLES.find((item) => item[0] === puzzleId);
+      const move = String(puzzle?.[2] || "").trim().split(/\\s+/)[1] || "";
+      const from = move.slice(0, 2);
+      const to = move.slice(2, 4);
+      const before = boardSignature();
+
+      activePanel()?.querySelector(\`[data-square="\${from}"]\`)?.click();
+      setTimeout(() => {
+        const selected = Array.from(activePanel()?.querySelectorAll(".selected") || []).map((square) => square.dataset.square);
+        activePanel()?.querySelector(\`[data-square="\${to}"]\`)?.click();
+        setTimeout(() => {
+          const afterMove = boardSignature();
+          document.querySelector("#resetButton")?.click();
+          const afterReset = boardSignature();
+          setTimeout(() => {
+            const afterDelay = boardSignature();
+            const panelClass = activePanel()?.className || "";
+            resolve({
+              puzzleId,
+              move,
+              selected,
+              moveChangedBoard: Boolean(move) && afterMove !== before,
+              resetRestoredBoard: afterReset === before,
+              replyStayedCanceled: afterDelay === afterReset,
+              replyingClass: panelClass.includes("replying")
+            });
+          }, 760);
+        }, 70);
       }, 70);
     })`
   );
