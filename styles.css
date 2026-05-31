@@ -87,7 +87,15 @@ button {
 }
 
 body.saved-mode .app-shell {
-  background: linear-gradient(180deg, #0d110c 0%, #151a10 46%, #080a07 100%);
+  background: linear-gradient(180deg, #171207 0%, #241d0d 46%, #0d0a05 100%);
+}
+
+body.saved-mode .app-shell::before {
+  background: linear-gradient(180deg, rgba(20, 15, 6, 0.96), rgba(20, 15, 6, 0));
+}
+
+body.saved-mode .app-shell::after {
+  background: linear-gradient(0deg, rgba(12, 9, 4, 0.96), rgba(12, 9, 4, 0));
 }
 
 .app-shell::before,
