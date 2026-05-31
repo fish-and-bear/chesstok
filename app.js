@@ -1,5 +1,4 @@
 import { Chess } from "./vendor/chess.mjs";
-import { PUZZLES } from "./puzzles.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const PIECE_NAMES = {
@@ -12,9 +11,11 @@ const PIECE_NAMES = {
 };
 const PIECE_SPRITE = "./pieces.svg";
 
+let PUZZLES = [];
+
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const RANKS = ["8", "7", "6", "5", "4", "3", "2", "1"];
-const PUZZLE_IDS = new Set(PUZZLES.map((puzzle) => puzzle.id));
+const PUZZLE_IDS = new Set();
 const STORAGE_KEY = "move-rush-state-v2";
 const STORAGE_DB = "move-rush-db";
 const STORAGE_STORE = "snapshots";
@@ -30,6 +31,8 @@ const SNAP_LOCK_MS = 430;
 const SNAP_CLASS_MS = 520;
 const BAD_SQUARE_MS = 360;
 const BOARD_TAP_LOCK_MS = 260;
+const VIRTUAL_RADIUS = 3;
+const STATE_CACHE_RADIUS = 8;
 const QUESTS = [
   { type: "clean", target: 3, label: "Clean 3" },
   { type: "solve", target: 5, label: "Solve 5" },
@@ -71,8 +74,12 @@ const session = {
   solvedIds: new Set(),
   mutedUntilGesture: true,
   puzzles: [],
+  feedStage: null,
+  feedSpacer: null,
+  panelHeight: 0,
   panels: [],
   mounted: new Set(),
+  cached: new Set(),
   states: []
 };
 
@@ -408,21 +415,24 @@ function buildFeed() {
 
   session.states = new Array(session.puzzles.length).fill(null);
   session.panels = [];
-  const fragment = document.createDocumentFragment();
+  session.mounted.clear();
+  session.cached.clear();
   const savedIndex = session.lastPuzzleId ? session.puzzles.findIndex((puzzle) => puzzle.id === session.lastPuzzleId) : -1;
   const startIndex = savedIndex >= 0 ? savedIndex : 0;
 
-  session.puzzles.forEach((puzzle, index) => {
-    const panel = document.createElement("article");
-    panel.className = "reel";
-    panel.dataset.index = index;
-    panel.dataset.puzzleId = puzzle.id;
-    panel.setAttribute("aria-label", `${puzzle.rating} rated puzzle`);
-    fragment.append(panel);
-    session.panels[index] = panel;
-  });
+  const stage = document.createElement("div");
+  stage.className = "feed-stage";
 
-  feed.append(fragment);
+  const spacer = document.createElement("div");
+  spacer.className = "feed-spacer";
+  spacer.setAttribute("aria-hidden", "true");
+
+  stage.append(spacer);
+  feed.replaceChildren(stage);
+  session.feedStage = stage;
+  session.feedSpacer = spacer;
+  updateFeedMetrics();
+
   session.active = startIndex;
   session.lastPuzzleId = session.puzzles[startIndex]?.id || "";
   renderNearby(startIndex);
@@ -430,7 +440,7 @@ function buildFeed() {
   const firstState = ensureState(startIndex);
   if (firstState) firstState.activatedAt = performance.now();
   if (startIndex > 0) {
-    window.requestAnimationFrame(() => session.panels[startIndex]?.scrollIntoView({ block: "start" }));
+    window.requestAnimationFrame(() => scrollToPanel(startIndex, "auto"));
   }
 }
 
@@ -439,14 +449,18 @@ function ensureState(index) {
   let state = session.states[index];
   if (!state) {
     state = preparePuzzle(session.puzzles[index], index);
+    if (session.solvedIds.has(state.puzzle.id)) applyStoredSolvedState(state);
     state.panel = session.panels[index];
     session.states[index] = state;
+    session.cached.add(index);
   }
+  state.panel = ensurePanel(index);
   mountBoard(state);
   return state;
 }
 
 function mountBoard(state) {
+  state.panel = ensurePanel(state.index);
   if (state.board) return;
 
   const boardWrap = document.createElement("div");
@@ -484,20 +498,25 @@ function mountBoard(state) {
   state.panel.replaceChildren(boardWrap);
   state.board = board;
   session.mounted.add(state.index);
+  syncPanelStateClasses(state);
   renderBoard(state);
 }
 
 function unmountBoard(index) {
   const state = session.states[index];
   if (!state?.board) return;
-  state.panel.replaceChildren();
+  state.panel?.replaceChildren();
+  state.panel?.remove();
+  if (session.panels[index] === state.panel) delete session.panels[index];
   state.board = null;
+  state.panel = null;
   session.mounted.delete(index);
 }
 
 function renderNearby(center) {
+  center = clampIndex(center);
   const keep = new Set();
-  for (let index = center - 2; index <= center + 2; index += 1) {
+  for (let index = center - VIRTUAL_RADIUS; index <= center + VIRTUAL_RADIUS; index += 1) {
     if (index < 0 || index >= session.puzzles.length) continue;
     keep.add(index);
     ensureState(index);
@@ -506,6 +525,90 @@ function renderNearby(center) {
   for (const index of [...session.mounted]) {
     if (!keep.has(index)) unmountBoard(index);
   }
+
+  for (const index of keep) {
+    session.panels[index]?.classList.toggle("active", index === session.active);
+  }
+
+  pruneStateCache(center);
+}
+
+function ensurePanel(index) {
+  if (index < 0 || index >= session.puzzles.length) return null;
+
+  let panel = session.panels[index];
+  if (!panel) {
+    panel = document.createElement("article");
+    panel.className = "reel";
+    panel.dataset.index = index;
+    panel.dataset.puzzleId = session.puzzles[index].id;
+    panel.setAttribute("aria-label", `${session.puzzles[index].rating} rated puzzle`);
+    session.panels[index] = panel;
+    session.feedStage?.append(panel);
+  }
+
+  positionPanel(index);
+  panel.classList.toggle("active", index === session.active);
+  return panel;
+}
+
+function positionPanel(index) {
+  const panel = session.panels[index];
+  if (!panel) return;
+  panel.style.setProperty("--panel-top", `${index * pageHeight()}px`);
+}
+
+function updateFeedMetrics() {
+  const page = Math.max(1, Math.round(feed.clientHeight || window.innerHeight || 1));
+  session.panelHeight = page;
+  feed.style.setProperty("--feed-page", `${page}px`);
+  if (session.feedSpacer) session.feedSpacer.style.height = `${Math.max(page, session.puzzles.length * page)}px`;
+  for (const index of session.mounted) positionPanel(index);
+}
+
+function pageHeight() {
+  return Math.max(1, session.panelHeight || feed.clientHeight || window.innerHeight || 1);
+}
+
+function scrollTopForIndex(index) {
+  return clampIndex(index) * pageHeight();
+}
+
+function scrollToPanel(index, behavior = "smooth") {
+  feed.scrollTo({ top: scrollTopForIndex(index), behavior });
+}
+
+function clampIndex(index) {
+  if (!session.puzzles.length) return 0;
+  return Math.max(0, Math.min(Math.round(index), session.puzzles.length - 1));
+}
+
+function pruneStateCache(center) {
+  for (const index of [...session.cached]) {
+    if (Math.abs(index - center) <= STATE_CACHE_RADIUS) continue;
+    if (session.states[index]?.board) continue;
+    session.states[index] = null;
+    session.cached.delete(index);
+  }
+}
+
+function applyStoredSolvedState(state) {
+  while (state.cursor < state.moves.length) {
+    const move = applyUci(state.game, state.moves[state.cursor]);
+    if (!move) break;
+    state.lastSquares = [move.from, move.to];
+    state.cursor += 1;
+  }
+  state.selected = null;
+  state.badSquares = [];
+  state.solved = true;
+  state.revealed = true;
+}
+
+function syncPanelStateClasses(state) {
+  if (!state.panel) return;
+  state.panel.classList.toggle("solved", state.solved);
+  state.panel.classList.toggle("revealed", state.revealed);
 }
 
 function orientationFor(state) {
@@ -943,7 +1046,7 @@ function createLineItem(san, number) {
 }
 
 function setActive(index) {
-  index = Math.max(0, Math.min(index, session.puzzles.length - 1));
+  index = clampIndex(index);
   if (index === session.active) return;
   const previousIndex = session.active;
   const previousState = session.states[previousIndex];
@@ -985,13 +1088,14 @@ function snapToRelative(direction) {
 }
 
 function snapToIndex(index, behavior = "smooth") {
-  index = Math.max(0, Math.min(index, session.puzzles.length - 1));
+  index = clampIndex(index);
+  updateFeedMetrics();
   renderNearby(index);
   snapLockedUntil = performance.now() + SNAP_LOCK_MS;
   document.body.classList.add("is-snapping");
   if (snapClassTimer) window.clearTimeout(snapClassTimer);
   snapClassTimer = window.setTimeout(() => document.body.classList.remove("is-snapping"), SNAP_CLASS_MS);
-  feed.scrollTo({ top: index * feed.clientHeight, behavior });
+  scrollToPanel(index, behavior);
 }
 
 function revealActive() {
@@ -1071,7 +1175,7 @@ function watchPanels() {
   let frame = 0;
   const syncActive = () => {
     frame = 0;
-    const next = Math.round(feed.scrollTop / Math.max(1, feed.clientHeight));
+    const next = clampIndex(feed.scrollTop / pageHeight());
     if (next !== session.active) setActive(next);
   };
 
@@ -1092,20 +1196,25 @@ function watchPanels() {
     "resize",
     () => {
       if (resizeTimer) window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => snapToIndex(session.active, "auto"), 120);
+      resizeTimer = window.setTimeout(() => {
+        updateFeedMetrics();
+        renderNearby(session.active);
+        snapToIndex(session.active, "auto");
+      }, 120);
     },
     { passive: true }
   );
 }
 
 function snapToNearestPanel() {
-  const page = feed.scrollTop / Math.max(1, feed.clientHeight);
+  const page = feed.scrollTop / pageHeight();
   const base = Math.floor(page);
   const progress = page - base;
-  let next = Math.round(page);
+  let next = clampIndex(page);
   if (lastScrollDirection > 0 && progress > 0.14) next = base + 1;
   if (lastScrollDirection < 0 && progress < 0.86) next = base;
-  const targetTop = next * feed.clientHeight;
+  next = clampIndex(next);
+  const targetTop = scrollTopForIndex(next);
   if (Math.abs(feed.scrollTop - targetTop) <= 2) return;
   snapToIndex(next, "smooth");
 }
@@ -1195,7 +1304,7 @@ function finishSwipe(startX, startY, endX, endY, startedAt) {
     return;
   }
 
-  snapToIndex(Math.round(feed.scrollTop / Math.max(1, feed.clientHeight)), "smooth");
+  snapToIndex(clampIndex(feed.scrollTop / pageHeight()), "smooth");
 }
 
 function bindActions() {
@@ -1247,6 +1356,8 @@ function bindActions() {
 boot();
 
 async function boot() {
+  await loadPuzzles();
+
   try {
     applySavedState(await readSavedState());
   } catch {}
@@ -1259,6 +1370,15 @@ async function boot() {
   setupPersistence();
   registerServiceWorker();
   document.documentElement.dataset.moveRush = "ready";
+}
+
+async function loadPuzzles() {
+  const module = await import("./puzzles.js");
+  PUZZLES = Array.isArray(module.PUZZLES) ? module.PUZZLES : [];
+  PUZZLE_IDS.clear();
+  for (const puzzle of PUZZLES) {
+    if (typeof puzzle.id === "string") PUZZLE_IDS.add(puzzle.id);
+  }
 }
 
 function registerServiceWorker() {
