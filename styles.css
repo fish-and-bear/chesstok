@@ -550,19 +550,21 @@ body.rush-mode .reel.active .board-wrap {
   width: 32%;
   aspect-ratio: 1;
   border-radius: 50%;
-  background: rgba(245, 241, 232, 0.82);
+  background: #f4df9a;
   box-shadow:
-    0 0 0 3px rgba(17, 24, 18, 0.44),
-    0 8px 18px rgba(0, 0, 0, 0.22);
+    0 0 0 3px rgba(12, 16, 14, 0.42),
+    0 8px 18px rgba(0, 0, 0, 0.26);
   animation: target-pop 160ms ease-out both;
 }
 
 .capture-target {
   inset: 0;
-  background: rgba(190, 123, 42, 0.22);
+  box-sizing: border-box;
+  border: 2px solid rgba(8, 12, 9, 0.82);
+  background: rgba(244, 223, 154, 0.26);
   box-shadow:
-    inset 0 0 0 2px rgba(35, 25, 13, 0.74),
-    inset 0 0 0 5px rgba(210, 139, 51, 0.88);
+    inset 0 0 0 4px rgba(244, 223, 154, 0.96),
+    inset 0 0 0 7px rgba(8, 12, 9, 0.18);
   animation: target-pop 160ms ease-out both;
 }
 
