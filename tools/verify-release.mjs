@@ -9,10 +9,13 @@ const errors = [];
 checkRequiredFiles();
 checkSyntax("app.js");
 checkSyntax("service-worker.js");
+checkSyntax("worker.js");
+checkSyntax("tools/build-public.mjs");
 checkSyntax("tools/build-shard.mjs");
 checkJson("package.json");
 checkJson("manifest.webmanifest");
 checkJson("vercel.json");
+checkJson("wrangler.jsonc");
 await checkPuzzleShard();
 checkIndex();
 checkServiceWorker();
@@ -32,6 +35,9 @@ function checkRequiredFiles() {
     "app.js",
     "styles.css",
     "service-worker.js",
+    "worker.js",
+    "wrangler.jsonc",
+    ".assetsignore",
     "manifest.webmanifest",
     "icon.svg",
     "puzzles.js",
@@ -43,7 +49,10 @@ function checkRequiredFiles() {
     "CONTRIBUTING.md",
     "DEPLOYMENT.md",
     "_headers",
-    "vercel.json"
+    "vercel.json",
+    "tools/build-public.mjs",
+    "tools/build-shard.mjs",
+    "tools/verify-release.mjs"
   ]) {
     if (!fs.existsSync(resolve(file))) fail(`Missing ${file}`);
   }
@@ -112,6 +121,10 @@ function checkServiceWorker() {
   if (!sw.includes(`styles.css?v=${cssVersion}`)) fail("service worker cache does not match styles.css version");
   if (!sw.includes("ASSET_URLS")) fail("service worker should only cache known assets");
 
+  const worker = read("worker.js");
+  if (!worker.includes('const PREFIX = "/chesstok"')) fail("worker.js should serve the app from /chesstok");
+  if (!worker.includes("chesstok.pages.dev")) fail("worker.js should proxy the Cloudflare Pages project");
+
   const assetMatches = [...sw.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
   for (const asset of assetMatches.filter((item) => item.startsWith("./"))) {
     const clean = asset.replace(/^\.\//, "").replace(/\?.*$/, "") || "index.html";
@@ -138,8 +151,10 @@ function checkSourceHygiene() {
 function checkDocs() {
   const notice = read("NOTICE");
   const readme = read("README.md");
+  const pkg = JSON.parse(read("package.json"));
   if (!notice.includes("CC0") || !notice.includes("database.lichess.org")) fail("NOTICE must attribute the Lichess CC0 puzzle source");
   if (!notice.includes("BSD-2-Clause")) fail("NOTICE must mention the chess.js BSD-2-Clause license");
+  if (!pkg.scripts?.build?.includes("build-public")) fail("package.json should expose npm run build");
   if (!readme.includes("npm run check")) fail("README should document the release check");
   if (!readme.includes("server-side scoring")) fail("README should state the client-side anti-cheat limit");
 }

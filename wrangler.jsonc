@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chesstok",
+  "main": "worker.js",
+  "compatibility_date": "2026-05-31",
+  "account_id": "c310f54488a21f7f91f8c316ffb12850",
+  "routes": [
+    {
+      "pattern": "angelicanaguio.com/chesstok*",
+      "zone_name": "angelicanaguio.com"
+    }
+  ]
+}

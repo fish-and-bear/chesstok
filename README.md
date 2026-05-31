@@ -1,11 +1,6 @@
-# Move Rush
+# Chesstok
 
-A mobile-first chess puzzle feed for quick tactical reps. Scroll to skip, tap a
-move to solve, reveal when you want practice, and keep going.
-
-The interface is intentionally small: side to move, board, streak, solved count,
-and four actions. Rank and quest text stay out of the main UI because the puzzle
-should take the attention, not the app.
+A mobile-first chess puzzle feed built like IG Reels/Tiktok.
 
 ## Run Locally
 
@@ -21,6 +16,7 @@ You can also serve the folder with any static server.
 
 ```sh
 npm run check
+npm run build
 ```
 
 The release check validates syntax, JSON, PWA assets, security headers, puzzle
@@ -30,11 +26,12 @@ shard shape, cache versions, and obvious stale UI tokens.
 
 This is a static site. Use this folder as the deploy root.
 
-- Cloudflare Pages: no build command required, or use `npm run check`.
-- Netlify: publish this folder. `_headers` sets security headers.
+- Cloudflare Pages: build command `npm run check && npm run build`, output
+  directory `dist`.
+- Netlify: build command `npm run build`, publish directory `dist`.
 - Vercel: deploy this folder. `vercel.json` sets security headers.
-- GitHub Pages: publish this folder. GitHub Pages will not apply `_headers`,
-  but the app still includes a CSP meta tag.
+- GitHub Pages: publish `dist`. GitHub Pages will not apply `_headers`, but the
+  app still includes a CSP meta tag.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for host notes.
 

@@ -1,6 +1,6 @@
 {
-  "name": "Move Rush",
-  "short_name": "Move Rush",
+  "name": "Chesstok",
+  "short_name": "Chesstok",
   "description": "A fast chess puzzle feed with offline progress saving.",
   "start_url": "./",
   "scope": "./",

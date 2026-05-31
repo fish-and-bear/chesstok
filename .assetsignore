@@ -1,0 +1,16 @@
+.git/
+.gitignore
+.DS_Store
+node_modules/
+tools/
+package.json
+wrangler.jsonc
+worker.js
+vercel.json
+DEPLOYMENT.md
+CONTRIBUTING.md
+SECURITY.md
+README.md
+LICENSE
+NOTICE
+*.log
