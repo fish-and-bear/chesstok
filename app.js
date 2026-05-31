@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "49";
+const ASSET_VERSION = "50";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -80,6 +80,8 @@ const comboToast = document.querySelector("#comboToast");
 const saveIcon = saveButton.querySelector("span");
 const saveCount = document.querySelector("#saveCount");
 const saveLabel = document.querySelector("#saveLabel");
+const savedFilterButton = document.querySelector("#savedFilterButton");
+const savedFilterCount = document.querySelector("#savedFilterCount");
 
 document.documentElement.dataset.chesstok = "loading";
 const bootStartedAt = performance.now();
@@ -98,6 +100,7 @@ const session = {
   flow: 28,
   clockRemainingMs: STREAK_CLOCK_MS,
   lastPuzzleId: "",
+  feedMode: "all",
   favorites: new Set(),
   solvedIds: new Set(),
   mutedUntilGesture: true,
@@ -415,7 +418,9 @@ function applyExternalSnapshot(snapshot) {
   const normalized = normalizeSnapshot(snapshot || {});
   if (normalized.sourceId === storageClientId) return;
   if (normalized.updatedAt <= lastAppliedAt) return;
+  const activeId = activePuzzleId();
   applySavedState(normalized);
+  reconcileSavedFeed(activeId);
   updateDock();
 }
 
@@ -535,12 +540,20 @@ function preparePuzzle(puzzle, index) {
   };
 }
 
-function buildFeed() {
+function buildFeed({ startPuzzleId = session.lastPuzzleId } = {}) {
   const ranked = rankPuzzlesForTarget(adaptiveTargetRating());
+  const savedRank = startPuzzleId ? ranked.findIndex((puzzle) => puzzle.id === startPuzzleId) : -1;
+  const savedPuzzles = savedPuzzleList();
   const unsolved = ranked.filter((puzzle) => !session.solvedIds.has(puzzle.id));
-  const savedRank = session.lastPuzzleId ? ranked.findIndex((puzzle) => puzzle.id === session.lastPuzzleId) : -1;
 
-  session.puzzles = unsolved.length ? unsolved : ranked;
+  if (session.feedMode === "saved" && !savedPuzzles.length) {
+    session.feedMode = "all";
+  }
+
+  session.states.forEach((state) => {
+    if (state) clearAutoAdvance(state);
+  });
+  session.puzzles = session.feedMode === "saved" ? savedPuzzles : unsolved.length ? unsolved : ranked;
   rebuildPuzzleIndex();
 
   session.states = new Array(session.puzzles.length).fill(null);
@@ -548,7 +561,12 @@ function buildFeed() {
   session.mounted.clear();
   session.cached.clear();
   lastAdaptKey = "";
-  const savedIndex = findStartIndexAfterRefresh(savedRank, ranked);
+  lastLineKey = "";
+  lineList.replaceChildren();
+  dock.classList.remove("has-line");
+  lineList.classList.remove("visible");
+  resetFeedGestureState();
+  const savedIndex = findStartIndexAfterRefresh(startPuzzleId, savedRank, ranked);
   const startIndex = savedIndex >= 0 ? savedIndex : 0;
 
   const stage = document.createElement("div");
@@ -562,11 +580,13 @@ function buildFeed() {
   feed.replaceChildren(stage);
   session.feedStage = stage;
   session.feedSpacer = spacer;
+  feed.scrollTop = 0;
+  lastScrollTop = 0;
   updateFeedMetrics();
 
   session.active = startIndex;
   session.lastPuzzleId = session.puzzles[startIndex]?.id || "";
-  adaptUpcomingPuzzles(true);
+  if (session.feedMode !== "saved") adaptUpcomingPuzzles(true);
   renderNearby(startIndex);
   session.panels[startIndex]?.classList.add("active");
   const firstState = ensureState(startIndex);
@@ -576,11 +596,14 @@ function buildFeed() {
   }
 }
 
-function findStartIndexAfterRefresh(savedRank, ranked) {
-  if (!session.lastPuzzleId) return -1;
+function savedPuzzleList() { return PUZZLES.filter((puzzle) => session.favorites.has(puzzle.id)); }
 
-  const exactIndex = session.puzzles.findIndex((puzzle) => puzzle.id === session.lastPuzzleId);
+function findStartIndexAfterRefresh(startPuzzleId, savedRank, ranked) {
+  if (!startPuzzleId) return -1;
+
+  const exactIndex = session.puzzles.findIndex((puzzle) => puzzle.id === startPuzzleId);
   if (exactIndex >= 0) return exactIndex;
+  if (session.feedMode === "saved") return -1;
   if (savedRank < 0) return -1;
 
   const nextPuzzle =
@@ -596,6 +619,16 @@ function findUnsolvedFromFullRank(puzzles, start, step) {
     if (puzzle && !session.solvedIds.has(puzzle.id)) return puzzle;
   }
   return null;
+}
+
+function resetFeedGestureState() {
+  for (const timer of [wheelTimer, scrollGestureTimer, scrollSettleTimer, snapClassTimer]) {
+    if (timer) window.clearTimeout(timer);
+  }
+  wheelDelta = wheelTimer = scrollGestureTimer = scrollSettleTimer = snapLockedUntil = snapClassTimer = 0;
+  wheelGestureConsumed = false;
+  scrollGestureStartIndex = null;
+  document.body.classList.remove("is-snapping");
 }
 
 function startStreakClock() {
@@ -698,6 +731,7 @@ function clampRating(rating) {
 }
 
 function adaptUpcomingPuzzles(force = false) {
+  if (session.feedMode === "saved") return;
   if (!session.puzzles.length) return;
   const start = session.active + 1;
   if (start >= session.puzzles.length) return;
@@ -1570,6 +1604,19 @@ function updateSaveControl(favorite = false) {
   if (saveIcon) saveIcon.textContent = favorite ? "\u2605" : "\u2606";
   if (saveCount) saveCount.textContent = countText;
   if (saveLabel) saveLabel.textContent = label;
+  updateSavedFilterControl();
+}
+
+function updateSavedFilterControl() {
+  if (!savedFilterButton || !savedFilterCount) return;
+  const count = session.favorites.size;
+  const active = session.feedMode === "saved";
+
+  savedFilterCount.textContent = count > 999 ? "999+" : String(count);
+  savedFilterButton.classList.toggle("active", active);
+  savedFilterButton.classList.toggle("empty", count === 0);
+  savedFilterButton.setAttribute("aria-pressed", active ? "true" : "false");
+  savedFilterButton.setAttribute("aria-label", count ? `${count} saved` : "No saved");
 }
 
 function pulseSaveButton() {
@@ -1790,7 +1837,9 @@ function toggleFavorite() {
   const state = ensureState(session.active);
   if (!state) return;
   const id = state.puzzle.id;
-  if (session.favorites.has(id)) {
+  const wasFavorite = session.favorites.has(id);
+
+  if (wasFavorite) {
     session.favorites.delete(id);
     flash("Removed");
   } else {
@@ -1799,8 +1848,53 @@ function toggleFavorite() {
   }
   tick("tap");
   pulseSaveButton();
+
+  if (session.feedMode === "saved" && wasFavorite) {
+    const saved = savedPuzzleList();
+    if (saved.length) {
+      buildFeed({ startPuzzleId: saved[Math.min(session.active, saved.length - 1)].id });
+    } else {
+      session.feedMode = "all";
+      buildFeed({ startPuzzleId: id });
+    }
+  }
+
   updateDock();
   saveState({ immediate: true });
+}
+
+function activePuzzleId() { return session.puzzles[session.active]?.id || session.lastPuzzleId || ""; }
+
+function toggleSavedFeed() {
+  const id = activePuzzleId();
+  if (session.feedMode === "saved") {
+    session.feedMode = "all";
+    buildFeed({ startPuzzleId: id });
+    flash("All");
+    updateDock();
+    return;
+  }
+
+  const saved = savedPuzzleList();
+  if (!saved.length) {
+    flash("No saved");
+    pulseSaveButton();
+    return;
+  }
+
+  session.feedMode = "saved";
+  buildFeed({ startPuzzleId: session.favorites.has(id) ? id : saved[0].id });
+  flash(`${saved.length} saved`);
+  updateDock();
+}
+
+function reconcileSavedFeed(preferredId = activePuzzleId()) {
+  if (session.feedMode !== "saved") return;
+  const saved = savedPuzzleList();
+  if (!saved.length) session.feedMode = "all";
+  if (!saved.length || session.puzzles.length !== saved.length || !session.puzzles.every((puzzle, index) => puzzle.id === saved[index].id)) {
+    buildFeed({ startPuzzleId: session.favorites.has(preferredId) ? preferredId : saved[0]?.id || preferredId });
+  }
 }
 
 function flash(text) {
@@ -1911,6 +2005,10 @@ function bindActions() {
   saveButton.addEventListener("click", () => {
     beginAudio();
     toggleFavorite();
+  });
+  savedFilterButton?.addEventListener("click", () => {
+    beginAudio();
+    toggleSavedFeed();
   });
   resetButton.addEventListener("click", () => {
     beginAudio();

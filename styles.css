@@ -209,7 +209,7 @@ h1.in-check {
 
 .rating-chip {
   display: inline-flex;
-  margin: 7px 0 0;
+  margin: 0;
   padding: 4px 7px;
   border: 1px solid rgba(245, 241, 232, 0.13);
   border-radius: 6px;
@@ -218,6 +218,65 @@ h1.in-check {
   font-size: 11px;
   font-weight: 800;
   line-height: 1;
+}
+
+.meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.saved-filter {
+  display: inline-flex;
+  min-height: 21px;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  border: 1px solid rgba(245, 241, 232, 0.13);
+  border-radius: 6px;
+  background: rgba(16, 21, 18, 0.68);
+  color: #cdd9ca;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 820;
+  line-height: 1;
+  pointer-events: auto;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease, opacity 140ms ease;
+}
+
+.saved-filter b {
+  color: #f0d88a;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.saved-filter span {
+  color: inherit;
+}
+
+.saved-filter.empty {
+  opacity: 0.58;
+}
+
+.saved-filter.active {
+  border-color: rgba(226, 189, 99, 0.38);
+  background: rgba(50, 41, 19, 0.72);
+  color: #f1e0ae;
+  opacity: 1;
+}
+
+.saved-filter:focus-visible {
+  border-color: var(--warn);
+  outline: 0;
+}
+
+@media (hover: hover) {
+  .saved-filter:hover {
+    border-color: rgba(226, 189, 99, 0.34);
+    background: rgba(24, 31, 24, 0.82);
+  }
 }
 
 .stats {
@@ -1169,9 +1228,22 @@ body.rush-mode .reel.active .board-wrap {
     line-height: 1.08;
   }
 
-  .rating-chip {
+  .meta-row {
     margin-top: 6px;
+    gap: 5px;
+  }
+
+  .rating-chip,
+  .saved-filter {
     padding: 3px 6px;
+    font-size: 10px;
+  }
+
+  .saved-filter {
+    min-height: 18px;
+  }
+
+  .saved-filter b {
     font-size: 10px;
   }
 

@@ -85,7 +85,7 @@ try {
     })`);
 
     if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
-    if (before.perf.version !== "49" || jump.perf.version !== "49") errors.push(`${viewport.name}: loaded app version is not 49`);
+    if (before.perf.version !== "50" || jump.perf.version !== "50") errors.push(`${viewport.name}: loaded app version is not 50`);
     if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
     if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
     if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);
@@ -116,6 +116,7 @@ try {
   const clockExpiry = await clockExpirySnapshot(cdp, appPort);
   const reviewLine = await reviewLineSnapshot(cdp, appPort);
   const saveControl = await saveControlSnapshot(cdp, appPort);
+  const savedFeed = await savedFeedSnapshot(cdp, appPort);
   const wheelSnap = await wheelSnapSnapshot(cdp, appPort);
 
   if (adaptiveHigh.target <= adaptiveLow.target + 320) {
@@ -134,9 +135,13 @@ try {
   if (saveControl.icon !== "\u2605") errors.push(`save icon did not fill: ${saveControl.icon || "empty"}`);
   if (!saveControl.persisted) errors.push("save did not persist to local storage");
   if (!saveControl.restored) errors.push("saved puzzle state did not restore after reload");
+  if (savedFeed.mode !== "saved") errors.push(`saved feed did not activate: ${savedFeed.mode || "none"}`);
+  if (savedFeed.activeId !== savedFeed.savedId) errors.push("saved feed did not open on the saved puzzle");
+  if (savedFeed.countText !== "1") errors.push(`saved feed count did not show 1: ${savedFeed.countText || "empty"}`);
+  if (savedFeed.backMode !== "all") errors.push(`saved feed did not return to all puzzles: ${savedFeed.backMode || "none"}`);
   if (wheelSnap.active !== "1") errors.push(`wheel gesture moved ${wheelSnap.active || "nowhere"} panels; expected 1`);
 
-  console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry, reviewLine, saveControl, wheelSnap }, null, 2));
+  console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry, reviewLine, saveControl, savedFeed, wheelSnap }, null, 2));
   await cdp.close();
 } finally {
   chrome.kill("SIGTERM");
@@ -330,6 +335,42 @@ async function saveControlSnapshot(cdp, appPort) {
     ...saved,
     restored: restored.pressed === "true" && restored.countText === "1" && restored.icon === "\u2605"
   };
+}
+
+async function savedFeedSnapshot(cdp, appPort) {
+  await cdp
+    .send("Storage.clearDataForOrigin", {
+      origin: `http://127.0.0.1:${appPort}`,
+      storageTypes: "all"
+    })
+    .catch(() => {});
+
+  const url = `http://127.0.0.1:${appPort}/?perf=saved-feed`;
+  await navigate(cdp, url);
+  await waitReady(cdp);
+  await evaluate(cdp, `document.querySelector("#saveButton")?.click()`);
+  await delay(160);
+  await evaluate(cdp, `document.querySelector("#savedFilterButton")?.click()`);
+  await delay(260);
+  const saved = await evaluate(
+    cdp,
+    `(() => {
+      const button = document.querySelector("#savedFilterButton");
+      return {
+        mode: button?.getAttribute("aria-pressed") === "true" ? "saved" : "all",
+        savedId: JSON.parse(localStorage.getItem("chesstok-state-v1") || "{}").favorites?.[0] || "",
+        activeId: document.querySelector(".reel.active")?.dataset.puzzleId || "",
+        activePressed: button?.getAttribute("aria-pressed") || "",
+        countText: document.querySelector("#savedFilterCount")?.textContent || "",
+        liveReels: document.querySelectorAll(".reel").length
+      };
+    })()`
+  );
+
+  await evaluate(cdp, `document.querySelector("#savedFilterButton")?.click()`);
+  await delay(260);
+  const backMode = await evaluate(cdp, `document.querySelector("#savedFilterButton")?.getAttribute("aria-pressed") === "true" ? "saved" : "all"`);
+  return { ...saved, backMode };
 }
 
 async function wheelSnapSnapshot(cdp, appPort) {
