@@ -84,7 +84,7 @@ try {
     })`);
 
     if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
-    if (before.perf.version !== "21" || jump.perf.version !== "21") errors.push(`${viewport.name}: loaded app version is not 21`);
+    if (before.perf.version !== "22" || jump.perf.version !== "22") errors.push(`${viewport.name}: loaded app version is not 22`);
     if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
     if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
     if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);
@@ -118,7 +118,7 @@ try {
     errors.push(`adaptive feed average only increased from ${adaptiveLow.upcomingAverage} to ${adaptiveHigh.upcomingAverage}`);
   }
   if (clockExpiry.streak !== "0") errors.push(`clock expiry left streak at ${clockExpiry.streak}`);
-  if (clockExpiry.clockSeconds < 88) errors.push(`clock did not restart after expiry: ${clockExpiry.clockText}`);
+  if (clockExpiry.clockSeconds < 58) errors.push(`clock did not restart after expiry: ${clockExpiry.clockText}`);
 
   console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry }, null, 2));
   await cdp.close();

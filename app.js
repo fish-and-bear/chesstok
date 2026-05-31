@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "21";
+const ASSET_VERSION = "22";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -29,7 +29,7 @@ const STORAGE_STORE = "snapshots";
 const STORAGE_ID = "primary";
 const STORAGE_VERSION = 3;
 const SAVE_DEBOUNCE = 180;
-const STREAK_CLOCK_MS = 90_000;
+const STREAK_CLOCK_MS = 60_000;
 const CLOCK_TICK_MS = 250;
 const MOVE_DELAY = 420;
 const RUSH_DELAY = 260;
@@ -1832,7 +1832,8 @@ function applyPerfOverrides() {
   session.cleanRun = Math.min(session.streak, perfIntegerParam(params, "clean", session.cleanRun, 0, 1000));
   session.band = perfIntegerParam(params, "band", session.band, MIN_PUZZLE_RATING, MAX_PUZZLE_RATING);
   session.flow = perfIntegerParam(params, "flow", session.flow, 0, 100);
-  session.clockRemainingMs = perfIntegerParam(params, "clock", session.clockRemainingMs / 1000, 0, 90) * 1000;
+  session.clockRemainingMs =
+    perfIntegerParam(params, "clock", session.clockRemainingMs / 1000, 0, STREAK_CLOCK_MS / 1000) * 1000;
 }
 
 function perfIntegerParam(params, key, fallback, min, max) {
