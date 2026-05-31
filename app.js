@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "25";
+const ASSET_VERSION = "26";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -480,6 +480,8 @@ function preparePuzzle(puzzle, index) {
     badSquares: [],
     activatedAt: 0,
     lastSquares: [],
+    reviewPly: null,
+    advanceTimer: 0,
     solution,
     panel: null,
     board: null,
@@ -943,6 +945,7 @@ function applyStoredSolvedState(state) {
   state.badSquares = [];
   state.solved = true;
   state.revealed = true;
+  state.reviewPly = null;
 }
 
 function syncPanelStateClasses(state) {
@@ -967,17 +970,21 @@ function renderBoard(state) {
   const orientation = orientationFor(state);
   if (state.boardOrientation !== orientation || !state.squareNodes) buildBoardGrid(state, orientation);
 
-  const activeColor = state.game.turn();
-  const targets = selectedTargets(state);
+  const review = reviewSnapshot(state);
+  const boardGame = review?.game || state.game;
+  const activeColor = boardGame.turn();
+  const targets = review ? new Map() : selectedTargets(state);
   const badSquares = new Set(state.badSquares);
+  const lastSquares = new Set(review?.lastSquares || state.lastSquares);
 
   for (const square of state.squareOrder) {
     const nodes = state.squareNodes.get(square);
-    const piece = state.game.get(square);
+    const piece = boardGame.get(square);
     const target = targets.get(square);
     const classes = ["square", nodes.isLight ? "light" : "dark"];
 
     if (state.selected === square) classes.push("selected");
+    if (lastSquares.has(square)) classes.push("last-move");
     if (badSquares.has(square)) classes.push("bad");
     if (piece && piece.color === activeColor) classes.push("can-move");
     if (target) classes.push("target");
@@ -1069,7 +1076,49 @@ function selectedTargets(state) {
   return targets;
 }
 
+function reviewSnapshot(state) {
+  if (!Number.isInteger(state.reviewPly)) return null;
+  const ply = clampReviewPly(state, state.reviewPly);
+  const game = new Chess(state.startFen);
+  let lastSquares = [];
+  for (let index = 1; index <= ply; index += 1) {
+    const move = applyUci(game, state.moves[index]);
+    if (!move) break;
+    lastSquares = [move.from, move.to];
+  }
+  return { game, lastSquares };
+}
+
+function clampReviewPly(state, ply) {
+  return Math.max(0, Math.min(Math.round(Number(ply) || 0), state.solution.length));
+}
+
+function clearReview(state, { render = true } = {}) {
+  if (state.reviewPly === null) return;
+  state.reviewPly = null;
+  if (render) {
+    renderBoard(state);
+    syncReviewLine(state, state.revealed || state.solved);
+  }
+}
+
+function reviewLine(state, ply) {
+  if (!state || (!state.revealed && !state.solved)) return;
+  clearAutoAdvance(state);
+  state.reviewPly = clampReviewPly(state, ply);
+  state.selected = null;
+  state.badSquares = [];
+  state.panel?.classList.remove("select", "shake", "replying");
+  renderBoard(state);
+  markFeedback(state, state.reviewPly ? `Move ${state.reviewPly}/${state.solution.length}` : "Start");
+  syncReviewLine(state, true);
+}
+
 function handleSquareTap(state, square) {
+  if (state.reviewPly !== null) {
+    clearReview(state);
+    if (state.solved) return;
+  }
   if (state.solved) return;
 
   const piece = state.game.get(square);
@@ -1125,6 +1174,7 @@ function handleSquareTap(state, square) {
 }
 
 function playExpectedMove(state, actor) {
+  clearReview(state, { render: false });
   const move = applyUci(state.game, state.moves[state.cursor]);
   state.lastSquares = [move.from, move.to];
   state.selected = null;
@@ -1202,9 +1252,7 @@ function solve(state) {
     markFeedback(state, "Practice");
     updateDock();
     saveState();
-    window.setTimeout(() => {
-      if (session.active === state.index) goToNext();
-    }, isRush() ? 520 : 780);
+    scheduleAutoAdvance(state);
     return;
   }
 
@@ -1216,9 +1264,7 @@ function solve(state) {
     burst(state);
     updateDock();
     saveState();
-    window.setTimeout(() => {
-      if (session.active === state.index) goToNext();
-    }, isRush() ? 520 : 780);
+    scheduleAutoAdvance(state);
     return;
   }
 
@@ -1239,10 +1285,21 @@ function solve(state) {
   burst(state);
   updateDock();
   saveState();
+  scheduleAutoAdvance(state);
+}
 
-  window.setTimeout(() => {
-    if (session.active === state.index) goToNext();
-  }, isRush() ? 520 : 780);
+function scheduleAutoAdvance(state) {
+  clearAutoAdvance(state);
+  state.advanceTimer = window.setTimeout(() => {
+    state.advanceTimer = 0;
+    if (session.active === state.index && state.reviewPly === null) goToNext();
+  }, isRush() ? 900 : 1400);
+}
+
+function clearAutoAdvance(state) {
+  if (!state?.advanceTimer) return;
+  window.clearTimeout(state.advanceTimer);
+  state.advanceTimer = 0;
 }
 
 function markFeedback(state, text) {
@@ -1423,9 +1480,10 @@ function updateDock() {
   dock.classList.toggle("has-line", showLine);
   lineList.classList.toggle("visible", showLine);
   if (lineKey !== lastLineKey) {
-    lineList.replaceChildren(...(showLine ? state.solution.map((move, index) => createLineItem(move.san, index + 1)) : []));
+    lineList.replaceChildren(...(showLine ? state.solution.map((move, index) => createLineItem(move, index + 1)) : []));
     lastLineKey = lineKey;
   }
+  syncReviewLine(state, showLine);
 }
 
 function difficultyForRating(rating) {
@@ -1501,13 +1559,34 @@ function pulseXpMeter() {
   }, 520);
 }
 
-function createLineItem(san, number) {
+function syncReviewLine(state, showLine) {
+  if (!showLine) return;
+  const activePly = activeReviewPly(state);
+  for (const button of lineList.querySelectorAll("[data-ply]")) {
+    const active = Number(button.dataset.ply) === activePly;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "step");
+    else button.removeAttribute("aria-current");
+  }
+}
+
+function activeReviewPly(state) {
+  if (Number.isInteger(state.reviewPly)) return clampReviewPly(state, state.reviewPly);
+  return clampReviewPly(state, state.cursor - 1);
+}
+
+function createLineItem(move, number) {
   const item = document.createElement("li");
+  const button = document.createElement("button");
   const moveNumber = document.createElement("span");
   const moveSan = document.createElement("b");
+  button.type = "button";
+  button.dataset.ply = String(number);
+  button.setAttribute("aria-label", `Review move ${number}: ${move.san}`);
   moveNumber.textContent = number;
-  moveSan.textContent = san;
-  item.append(moveNumber, moveSan);
+  moveSan.textContent = move.san;
+  button.append(moveNumber, moveSan);
+  item.append(button);
   return item;
 }
 
@@ -1520,6 +1599,7 @@ function setActive(index) {
     previousState.selected = null;
     previousState.badSquares = [];
     previousState.panel?.classList.remove("select", "shake", "replying");
+    clearAutoAdvance(previousState);
     renderBoard(previousState);
   }
   session.panels[previousIndex]?.classList.remove("active");
@@ -1570,6 +1650,7 @@ function snapToIndex(index, behavior = "smooth") {
 function revealActive() {
   const state = ensureState(session.active);
   if (!state) return;
+  clearAutoAdvance(state);
   if (state.solved) return;
   if (!state.revealed && !state.solved) {
     session.streak = 0;
@@ -1593,6 +1674,7 @@ function revealActive() {
 function resetActive() {
   const old = ensureState(session.active);
   if (!old) return;
+  clearAutoAdvance(old);
   const fresh = preparePuzzle(old.puzzle, old.index);
   fresh.panel = old.panel;
   fresh.board = old.board;
@@ -1646,6 +1728,8 @@ function createFatalErrorPanel() {
 function skipActive() {
   const state = ensureState(session.active);
   if (!state) return;
+  clearAutoAdvance(state);
+  clearReview(state, { render: false });
   state.selected = null;
   state.badSquares = [];
   state.panel.classList.remove("select", "shake", "replying");
@@ -1787,6 +1871,12 @@ function bindActions() {
   resetButton.addEventListener("click", () => {
     beginAudio();
     resetActive();
+  });
+  lineList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-ply]");
+    if (!button) return;
+    beginAudio();
+    reviewLine(ensureState(session.active), Number(button.dataset.ply));
   });
 
   window.addEventListener("keydown", (event) => {

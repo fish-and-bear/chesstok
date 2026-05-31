@@ -10,6 +10,7 @@ const debugPort = 9500 + Math.floor(Math.random() * 600);
 const errors = [];
 const viewports = [
   { name: "phone-small", width: 320, height: 568, scale: 2, mobile: true },
+  { name: "phone-small-css", width: 320, height: 568, scale: 1, mobile: false },
   { name: "phone", width: 390, height: 844, scale: 2, mobile: true },
   { name: "phone-wide", width: 549, height: 900, scale: 2, mobile: true },
   { name: "tablet", width: 768, height: 1024, scale: 2, mobile: true },
@@ -84,7 +85,7 @@ try {
     })`);
 
     if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
-    if (before.perf.version !== "25" || jump.perf.version !== "25") errors.push(`${viewport.name}: loaded app version is not 25`);
+    if (before.perf.version !== "26" || jump.perf.version !== "26") errors.push(`${viewport.name}: loaded app version is not 26`);
     if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
     if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
     if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);
@@ -95,6 +96,7 @@ try {
     if (!before.clockText || !jump.clockText) errors.push(`${viewport.name}: streak clock text is missing`);
     if (!before.xpText || !jump.xpText) errors.push(`${viewport.name}: XP meter text is missing`);
     if (before.xpClipped || jump.xpClipped) errors.push(`${viewport.name}: XP meter is clipped`);
+    if (before.hudClipped || jump.hudClipped) errors.push(`${viewport.name}: HUD is clipped`);
     if (viewport.width <= 640 && (before.boardCenterOffset > 1 || jump.boardCenterOffset > 1)) {
       errors.push(`${viewport.name}: board is ${Math.max(before.boardCenterOffset, jump.boardCenterOffset)}px off center`);
     }
@@ -112,6 +114,7 @@ try {
   const adaptiveLow = await adaptiveSnapshot(cdp, appPort, { streak: 0, band: 1200, flow: 18 });
   const adaptiveHigh = await adaptiveSnapshot(cdp, appPort, { streak: 9, band: 1200, flow: 88 });
   const clockExpiry = await clockExpirySnapshot(cdp, appPort);
+  const reviewLine = await reviewLineSnapshot(cdp, appPort);
 
   if (adaptiveHigh.target <= adaptiveLow.target + 320) {
     errors.push(`adaptive target only increased from ${adaptiveLow.target} to ${adaptiveHigh.target}`);
@@ -121,8 +124,10 @@ try {
   }
   if (clockExpiry.streak !== "0") errors.push(`clock expiry left streak at ${clockExpiry.streak}`);
   if (clockExpiry.clockSeconds < 58) errors.push(`clock did not restart after expiry: ${clockExpiry.clockText}`);
+  if (reviewLine.activePly !== "1") errors.push(`solution review did not activate ply 1; got ${reviewLine.activePly || "none"}`);
+  if (!reviewLine.lineVisible) errors.push("solution review line is not visible after reveal");
 
-  console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry }, null, 2));
+  console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry, reviewLine }, null, 2));
   await cdp.close();
 } finally {
   chrome.kill("SIGTERM");
@@ -141,6 +146,7 @@ function snapshotExpression() {
     const feed = document.querySelector("#feed");
     const board = document.querySelector(".reel.active .board-wrap")?.getBoundingClientRect();
     const rail = document.querySelector(".rail")?.getBoundingClientRect();
+    const hud = document.querySelector(".hud")?.getBoundingClientRect();
     const xp = document.querySelector("#xpStat")?.getBoundingClientRect();
     const root = document.documentElement.dataset;
     const clipped = (rect) => rect ? rect.left < -1 || rect.right > innerWidth + 1 || rect.top < -1 || rect.bottom > innerHeight + 1 : true;
@@ -165,10 +171,12 @@ function snapshotExpression() {
       xpText: document.querySelector("#xpValue")?.textContent || "",
       board: board ? { x: Math.round(board.left), y: Math.round(board.top), w: Math.round(board.width), h: Math.round(board.height) } : null,
       rail: rail ? { x: Math.round(rail.left), y: Math.round(rail.top), w: Math.round(rail.width), h: Math.round(rail.height) } : null,
+      hud: hud ? { x: Math.round(hud.left), y: Math.round(hud.top), w: Math.round(hud.width), h: Math.round(hud.height) } : null,
       xp: xp ? { x: Math.round(xp.left), y: Math.round(xp.top), w: Math.round(xp.width), h: Math.round(xp.height) } : null,
       boardCenterOffset: board ? Math.round(Math.abs((board.left + board.width / 2) - innerWidth / 2)) : 999,
       boardClipped: clipped(board),
       railClipped: clipped(rail),
+      hudClipped: clipped(hud),
       xpClipped: clipped(xp),
       railOverlapsBoard: overlaps(board, rail)
     };
@@ -232,6 +240,37 @@ async function clockExpirySnapshot(cdp, appPort) {
         clockSeconds: Number(clockText.replace(/\\D/g, "")) || 0
       };
     })()`
+  );
+}
+
+async function reviewLineSnapshot(cdp, appPort) {
+  await cdp
+    .send("Storage.clearDataForOrigin", {
+      origin: `http://127.0.0.1:${appPort}`,
+      storageTypes: "all"
+    })
+    .catch(() => {});
+
+  await navigate(cdp, `http://127.0.0.1:${appPort}/?perf=review-line`);
+  await waitReady(cdp);
+  return evaluate(
+    cdp,
+    `new Promise((resolve) => {
+      document.querySelector("#revealButton")?.click();
+      setTimeout(() => {
+        document.querySelector(".line-list [data-ply='1']")?.click();
+        setTimeout(() => {
+          const active = document.querySelector(".line-list [aria-current='step']");
+          const board = document.querySelector(".reel.active .board-wrap")?.getBoundingClientRect();
+          resolve({
+            activePly: active?.dataset.ply || "",
+            lineVisible: document.querySelector("#lineList")?.classList.contains("visible") || false,
+            feedback: document.querySelector(".reel.active .feedback")?.textContent || "",
+            boardCenterOffset: board ? Math.round(Math.abs((board.left + board.width / 2) - innerWidth / 2)) : 999
+          });
+        }, 140);
+      }, 140);
+    })`
   );
 }
 

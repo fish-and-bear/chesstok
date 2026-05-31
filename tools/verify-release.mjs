@@ -270,7 +270,9 @@ function checkSourceHygiene() {
     `${legacyBuildSlug}-v23`,
     "?v=23",
     `${legacyBuildSlug}-v24`,
-    "?v=24"
+    "?v=24",
+    "chesstok-v25",
+    "?v=25"
   ]) {
     if (sourceBundle.includes(stale)) {
       fail(`Found stale UI/build token ${stale}`);
