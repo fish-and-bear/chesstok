@@ -40,13 +40,19 @@ body {
   overflow: hidden;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   min-width: 320px;
+  user-select: none;
 }
 
 button {
   color: inherit;
   font: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .app-shell {
@@ -54,6 +60,29 @@ button {
   height: 100vh;
   height: 100dvh;
   background: linear-gradient(180deg, #0b100d 0%, #111a14 46%, #070a08 100%);
+}
+
+.app-shell::before,
+.app-shell::after {
+  position: fixed;
+  right: 0;
+  left: 0;
+  z-index: 8;
+  display: block;
+  height: 150px;
+  content: "";
+  pointer-events: none;
+}
+
+.app-shell::before {
+  top: 0;
+  background: linear-gradient(180deg, rgba(7, 10, 8, 0.96), rgba(7, 10, 8, 0));
+}
+
+.app-shell::after {
+  bottom: 0;
+  height: 132px;
+  background: linear-gradient(0deg, rgba(7, 10, 8, 0.96), rgba(7, 10, 8, 0));
 }
 
 .flow-meter {
@@ -230,7 +259,9 @@ body.rush-mode .reel.active .board-wrap {
     0 24px 58px rgba(0, 0, 0, 0.5),
     0 0 0 1px rgba(12, 16, 13, 0.9);
   contain: layout paint style;
-  transition: transform 260ms ease, box-shadow 260ms ease;
+  isolation: isolate;
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 220ms ease;
+  backface-visibility: hidden;
   will-change: transform;
 }
 
@@ -483,6 +514,7 @@ body.rush-mode .reel.active .board-wrap {
     inset 0 1px 0 rgba(245, 241, 232, 0.08);
   cursor: pointer;
   place-items: center;
+  transition: border-color 140ms ease, color 140ms ease, transform 140ms ease, background 140ms ease;
 }
 
 .icon-button span {
@@ -491,11 +523,18 @@ body.rush-mode .reel.active .board-wrap {
   line-height: 1;
 }
 
-.icon-button:hover,
 .icon-button:focus-visible {
   border-color: var(--warn);
   outline: 0;
   transform: translateY(-1px);
+}
+
+@media (hover: hover) {
+  .icon-button:hover {
+    border-color: var(--warn);
+    outline: 0;
+    transform: translateY(-1px);
+  }
 }
 
 .icon-button:active {
@@ -773,23 +812,34 @@ body.rush-mode .reel.active .board-wrap {
   }
 }
 
-@media (max-width: 420px) {
+@media (min-width: 600px) and (max-width: 859px) {
   :root {
-    --side-gap: 8px;
-    --rail-space: 50px;
-    --reel-top: 82px;
-    --reel-bottom: 78px;
-    --board-breath: 12px;
+    --rail-space: 86px;
+  }
+}
+
+@media (max-width: 520px) and (orientation: portrait) {
+  :root {
+    --side-gap: 10px;
+    --rail-space: 10px;
+    --reel-top: 72px;
+    --reel-bottom: 118px;
+    --board-breath: 8px;
   }
 
   .hud {
     gap: 8px;
-    padding-right: 10px;
+    align-items: center;
+    padding: max(12px, env(safe-area-inset-top)) 12px 8px;
+  }
+
+  .kicker {
+    display: none;
   }
 
   h1 {
-    max-width: 58vw;
-    font-size: 21px;
+    max-width: 49vw;
+    font-size: 19px;
     line-height: 1.08;
   }
 
@@ -799,16 +849,16 @@ body.rush-mode .reel.active .board-wrap {
   }
 
   .stats span {
-    min-width: 62px;
-    padding: 6px;
+    min-width: 56px;
+    padding: 6px 7px;
   }
 
   .board-wrap {
-    transform: translateY(-12px);
+    transform: translateY(-6px);
   }
 
   .reel.active .board-wrap {
-    transform: translateY(-14px) scale(1.012);
+    transform: translateY(-8px) scale(1.01);
   }
 
   .reel.hit .board-wrap {
@@ -816,16 +866,46 @@ body.rush-mode .reel.active .board-wrap {
   }
 
   .rail {
-    right: 8px;
+    right: auto;
+    bottom: max(62px, calc(env(safe-area-inset-bottom) + 58px));
+    left: 50%;
+    grid-template-columns: repeat(4, 44px);
+    gap: 8px;
+    transform: translateX(-50%);
   }
 
   .icon-button {
-    width: 42px;
-    height: 42px;
+    width: 44px;
+    height: 44px;
+    background: rgba(18, 26, 21, 0.9);
   }
 
   .icon-button span {
     font-size: 22px;
+  }
+
+  .dock {
+    min-height: 50px;
+    padding: 8px 10px max(8px, env(safe-area-inset-bottom)) 10px;
+  }
+
+  .line-list {
+    max-height: 46px;
+    font-size: 12px;
+  }
+
+  .line-list.visible {
+    grid-template-columns: repeat(auto-fit, minmax(54px, 1fr));
+    gap: 4px;
+  }
+
+  .line-list li {
+    padding: 5px 7px;
+  }
+
+  .toast,
+  .combo-toast {
+    top: 64px;
   }
 }
 
@@ -934,13 +1014,13 @@ body.rush-mode .reel.active .board-wrap {
 
 @keyframes board-hit-mobile {
   0% {
-    transform: translateY(-14px) scale(1.012);
+    transform: translateY(-8px) scale(1.01);
   }
   55% {
-    transform: translateY(-20px) scale(1.04);
+    transform: translateY(-14px) scale(1.035);
   }
   100% {
-    transform: translateY(-14px) scale(1.012);
+    transform: translateY(-8px) scale(1.01);
   }
 }
 

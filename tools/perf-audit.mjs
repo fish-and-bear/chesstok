@@ -8,6 +8,12 @@ const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 const appPort = 8890 + Math.floor(Math.random() * 600);
 const debugPort = 9500 + Math.floor(Math.random() * 600);
 const errors = [];
+const viewports = [
+  { name: "phone-small", width: 320, height: 568, scale: 2, mobile: true },
+  { name: "phone", width: 390, height: 844, scale: 2, mobile: true },
+  { name: "tablet", width: 768, height: 1024, scale: 2, mobile: true },
+  { name: "desktop", width: 1280, height: 800, scale: 1, mobile: false }
+];
 
 const server = spawn("python3", ["-m", "http.server", String(appPort), "--bind", "127.0.0.1", "--directory", root], {
   stdio: "ignore"
@@ -33,34 +39,48 @@ try {
 
   await cdp.send("Page.enable");
   await cdp.send("Runtime.enable");
-  await cdp.send("Emulation.setDeviceMetricsOverride", {
-    width: 390,
-    height: 844,
-    deviceScaleFactor: 2,
-    mobile: true
-  });
-
   await waitForHttp(`http://127.0.0.1:${appPort}/`);
-  await navigate(cdp, `http://127.0.0.1:${appPort}/?perf=${Date.now()}`);
-  await waitReady(cdp);
 
-  const before = await evaluate(cdp, snapshotExpression());
-  const jump = await evaluate(cdp, `new Promise((resolve) => {
-    const feed = document.querySelector("#feed");
-    feed.scrollTop = feed.clientHeight * 500;
-    feed.dispatchEvent(new Event("scroll"));
-    setTimeout(() => resolve((${snapshotExpression()})), 380);
-  })`);
+  const results = [];
+  for (const viewport of viewports) {
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width: viewport.width,
+      height: viewport.height,
+      deviceScaleFactor: viewport.scale,
+      mobile: viewport.mobile
+    });
+    await cdp
+      .send("Storage.clearDataForOrigin", {
+        origin: `http://127.0.0.1:${appPort}`,
+        storageTypes: "all"
+      })
+      .catch(() => {});
 
-  if (before.perf.readyMs > 5000) errors.push(`ready took ${before.perf.readyMs}ms; budget is 5000ms`);
-  if (before.reels > 4) errors.push(`initial live reels ${before.reels}; budget is 4`);
-  if (jump.reels > 7) errors.push(`jump live reels ${jump.reels}; budget is 7`);
-  if (jump.boards > 7) errors.push(`jump live boards ${jump.boards}; budget is 7`);
-  if (jump.nodes > 2100) errors.push(`jump DOM nodes ${jump.nodes}; budget is 2100`);
-  if (before.boardClipped || jump.boardClipped) errors.push("board is clipped in the mobile viewport");
-  if (jump.active !== "500") errors.push(`jump landed on puzzle ${jump.active}; expected 500`);
+    await navigate(cdp, `http://127.0.0.1:${appPort}/?perf=${Date.now()}-${viewport.name}`);
+    await waitReady(cdp);
 
-  console.log(JSON.stringify({ puzzleBytes, before, jump }, null, 2));
+    const before = await evaluate(cdp, snapshotExpression());
+    const jump = await evaluate(cdp, `new Promise((resolve) => {
+      const feed = document.querySelector("#feed");
+      feed.scrollTop = feed.clientHeight * 500;
+      feed.dispatchEvent(new Event("scroll"));
+      setTimeout(() => resolve((${snapshotExpression()})), 380);
+    })`);
+
+    if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
+    if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
+    if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
+    if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);
+    if (jump.nodes > 2100) errors.push(`${viewport.name}: jump DOM nodes ${jump.nodes}; budget is 2100`);
+    if (before.boardClipped || jump.boardClipped) errors.push(`${viewport.name}: board is clipped`);
+    if (before.railClipped || jump.railClipped) errors.push(`${viewport.name}: action rail is clipped`);
+    if (before.railOverlapsBoard || jump.railOverlapsBoard) errors.push(`${viewport.name}: action rail overlaps the board`);
+    if (jump.active !== "500") errors.push(`${viewport.name}: jump landed on puzzle ${jump.active}; expected 500`);
+
+    results.push({ viewport, before, jump });
+  }
+
+  console.log(JSON.stringify({ puzzleBytes, results }, null, 2));
   await cdp.close();
 } finally {
   chrome.kill("SIGTERM");
@@ -78,7 +98,10 @@ function snapshotExpression() {
   return `(() => {
     const feed = document.querySelector("#feed");
     const board = document.querySelector(".reel.active .board-wrap")?.getBoundingClientRect();
+    const rail = document.querySelector(".rail")?.getBoundingClientRect();
     const root = document.documentElement.dataset;
+    const clipped = (rect) => rect ? rect.left < -1 || rect.right > innerWidth + 1 || rect.top < -1 || rect.bottom > innerHeight + 1 : true;
+    const overlaps = (a, b) => a && b && a.left < b.right - 3 && a.right > b.left + 3 && a.top < b.bottom - 3 && a.bottom > b.top + 3;
     return {
       ready: document.documentElement.dataset.moveRush,
       active: document.querySelector(".reel.active")?.dataset.index || "",
@@ -94,7 +117,11 @@ function snapshotExpression() {
       nodes: document.querySelectorAll("*").length,
       scrollTop: Math.round(feed.scrollTop),
       scrollHeight: Math.round(feed.scrollHeight),
-      boardClipped: board ? board.left < 0 || board.right > innerWidth || board.top < 0 || board.bottom > innerHeight : true
+      board: board ? { x: Math.round(board.left), y: Math.round(board.top), w: Math.round(board.width), h: Math.round(board.height) } : null,
+      rail: rail ? { x: Math.round(rail.left), y: Math.round(rail.top), w: Math.round(rail.width), h: Math.round(rail.height) } : null,
+      boardClipped: clipped(board),
+      railClipped: clipped(rail),
+      railOverlapsBoard: overlaps(board, rail)
     };
   })()`;
 }

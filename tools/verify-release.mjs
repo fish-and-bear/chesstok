@@ -179,7 +179,9 @@ function checkSourceHygiene() {
     "move-rush-v14",
     "?v=14",
     "move-rush-v15",
-    "?v=15"
+    "?v=15",
+    "move-rush-v16",
+    "?v=16"
   ]) {
     if (`${app}\n${index}\n${styles}\n${read("service-worker.js")}`.includes(stale)) fail(`Found stale UI/build token ${stale}`);
   }

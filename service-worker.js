@@ -1,13 +1,13 @@
-const CACHE_NAME = "move-rush-v16";
+const CACHE_NAME = "move-rush-v17";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=16",
-  "./app.js?v=16",
-  "./puzzles.js?v=16",
+  "./styles.css?v=17",
+  "./app.js?v=17",
+  "./puzzles.js?v=17",
   "./vendor/chess.mjs",
   "./manifest.webmanifest",
-  "./pieces.svg?v=16",
+  "./pieces.svg?v=17",
   "./icon.svg"
 ];
 const ASSET_URLS = new Set(ASSETS.map((asset) => new URL(asset, self.location).href));

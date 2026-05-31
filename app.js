@@ -9,12 +9,13 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "16";
+const ASSET_VERSION = "17";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
 let PUZZLES = [];
 
+const PERF_MODE = new URLSearchParams(window.location.search).has("perf");
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const RANKS = ["8", "7", "6", "5", "4", "3", "2", "1"];
 const PUZZLE_IDS = new Set();
@@ -26,13 +27,12 @@ const STORAGE_VERSION = 3;
 const SAVE_DEBOUNCE = 180;
 const MOVE_DELAY = 420;
 const RUSH_DELAY = 260;
-const SWIPE_DISTANCE = 42;
-const SWIPE_VELOCITY = 0.42;
 const WHEEL_STEP = 34;
 const SNAP_LOCK_MS = 430;
 const SNAP_CLASS_MS = 520;
 const BAD_SQUARE_MS = 360;
-const BOARD_TAP_LOCK_MS = 260;
+const BOARD_PAN_LOCK_MS = 340;
+const BOARD_PAN_DISTANCE = 10;
 const VIRTUAL_RADIUS = 3;
 const STATE_CACHE_RADIUS = 8;
 const QUESTS = [
@@ -96,14 +96,11 @@ let syncChannel = null;
 let snapLockedUntil = 0;
 let snapClassTimer = 0;
 let boardTapLockedUntil = 0;
+let boardPointerStartX = 0;
+let boardPointerStartY = 0;
+let boardPointerStartAt = 0;
 let wheelDelta = 0;
 let wheelTimer = 0;
-let touchStartY = 0;
-let touchStartX = 0;
-let touchStartAt = 0;
-let pointerStartY = 0;
-let pointerStartX = 0;
-let pointerStartAt = 0;
 let scrollSettleTimer = 0;
 let lastScrollTop = 0;
 let lastScrollDirection = 0;
@@ -513,6 +510,10 @@ function mountBoard(state) {
   board.className = "board";
   board.setAttribute("role", "grid");
   board.setAttribute("aria-label", "Chess board");
+  board.addEventListener("pointerdown", handleBoardPointerStart, { passive: true });
+  board.addEventListener("pointermove", handleBoardPointerMove, { passive: true });
+  board.addEventListener("pointerup", clearBoardPointer, { passive: true });
+  board.addEventListener("pointercancel", clearBoardPointer, { passive: true });
   board.addEventListener("click", (event) => {
     if (performance.now() < boardTapLockedUntil) return;
     const square = event.target.closest("[data-square]");
@@ -579,7 +580,10 @@ function renderNearby(center) {
   }
 
   for (const index of keep) {
-    session.panels[index]?.classList.toggle("active", index === session.active);
+    const panel = session.panels[index];
+    const active = index === session.active;
+    panel?.classList.toggle("active", active);
+    panel?.setAttribute("aria-current", active ? "true" : "false");
   }
 
   pruneStateCache(center);
@@ -600,7 +604,9 @@ function ensurePanel(index) {
   }
 
   positionPanel(index);
-  panel.classList.toggle("active", index === session.active);
+  const active = index === session.active;
+  panel.classList.toggle("active", active);
+  panel.setAttribute("aria-current", active ? "true" : "false");
   return panel;
 }
 
@@ -611,7 +617,7 @@ function positionPanel(index) {
 }
 
 function updateFeedMetrics() {
-  const page = Math.max(1, Math.round(feed.clientHeight || window.innerHeight || 1));
+  const page = Math.max(1, Math.round(window.visualViewport?.height || feed.clientHeight || window.innerHeight || 1));
   session.panelHeight = page;
   feed.style.setProperty("--feed-page", `${page}px`);
   if (session.feedSpacer) session.feedSpacer.style.height = `${Math.max(page, session.puzzles.length * page)}px`;
@@ -1148,6 +1154,7 @@ function setActive(index) {
     renderBoard(previousState);
   }
   session.panels[previousIndex]?.classList.remove("active");
+  session.panels[previousIndex]?.setAttribute("aria-current", "false");
   session.active = index;
   session.lastPuzzleId = session.puzzles[session.active]?.id || "";
   session.selected = null;
@@ -1160,6 +1167,7 @@ function setActive(index) {
     renderBoard(state);
   }
   session.panels[session.active]?.classList.add("active");
+  session.panels[session.active]?.setAttribute("aria-current", "true");
   updateDock();
   saveState({ broadcast: false });
 }
@@ -1243,6 +1251,27 @@ function skipActive() {
   goToNext();
 }
 
+function handleBoardPointerStart(event) {
+  if (event.pointerType === "mouse") return;
+  boardPointerStartX = event.clientX;
+  boardPointerStartY = event.clientY;
+  boardPointerStartAt = performance.now();
+}
+
+function handleBoardPointerMove(event) {
+  if (!boardPointerStartAt || event.pointerType === "mouse") return;
+  const deltaX = Math.abs(event.clientX - boardPointerStartX);
+  const deltaY = Math.abs(event.clientY - boardPointerStartY);
+  if (deltaY < BOARD_PAN_DISTANCE || deltaY <= deltaX) return;
+  boardTapLockedUntil = performance.now() + BOARD_PAN_LOCK_MS;
+}
+
+function clearBoardPointer() {
+  boardPointerStartX = 0;
+  boardPointerStartY = 0;
+  boardPointerStartAt = 0;
+}
+
 function toggleFavorite() {
   const state = ensureState(session.active);
   if (!state) return;
@@ -1272,6 +1301,14 @@ function watchPanels() {
     const next = clampIndex(feed.scrollTop / pageHeight());
     if (next !== session.active) setActive(next);
   };
+  const scheduleMetricsUpdate = () => {
+    if (resizeTimer) window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(() => {
+      updateFeedMetrics();
+      renderNearby(session.active);
+      snapToIndex(session.active, "auto");
+    }, 120);
+  };
 
   feed.addEventListener(
     "scroll",
@@ -1285,19 +1322,10 @@ function watchPanels() {
     },
     { passive: true }
   );
+  feed.addEventListener("scrollend", snapToNearestPanel, { passive: true });
 
-  window.addEventListener(
-    "resize",
-    () => {
-      if (resizeTimer) window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => {
-        updateFeedMetrics();
-        renderNearby(session.active);
-        snapToIndex(session.active, "auto");
-      }, 120);
-    },
-    { passive: true }
-  );
+  window.addEventListener("resize", scheduleMetricsUpdate, { passive: true });
+  window.visualViewport?.addEventListener("resize", scheduleMetricsUpdate, { passive: true });
 }
 
 function snapToNearestPanel() {
@@ -1315,48 +1343,6 @@ function snapToNearestPanel() {
 
 function bindSwipeNavigation() {
   feed.addEventListener("wheel", handleWheel, { passive: false });
-  feed.addEventListener("pointerdown", handlePointerStart, { passive: true });
-  feed.addEventListener("pointerup", handlePointerEnd, { passive: true });
-  feed.addEventListener("pointercancel", clearPointerSwipe, { passive: true });
-  feed.addEventListener(
-    "touchstart",
-    (event) => {
-      const touch = event.changedTouches[0];
-      touchStartX = touch.clientX;
-      touchStartY = touch.clientY;
-      touchStartAt = performance.now();
-    },
-    { passive: true }
-  );
-  feed.addEventListener("touchend", handleTouchEnd, { passive: true });
-  feed.addEventListener(
-    "touchcancel",
-    () => {
-      touchStartX = 0;
-      touchStartY = 0;
-      touchStartAt = 0;
-    },
-    { passive: true }
-  );
-}
-
-function handlePointerStart(event) {
-  if (event.pointerType === "mouse") return;
-  pointerStartX = event.clientX;
-  pointerStartY = event.clientY;
-  pointerStartAt = performance.now();
-}
-
-function handlePointerEnd(event) {
-  if (!pointerStartAt || event.pointerType === "mouse") return;
-  finishSwipe(pointerStartX, pointerStartY, event.clientX, event.clientY, pointerStartAt);
-  clearPointerSwipe();
-}
-
-function clearPointerSwipe() {
-  pointerStartX = 0;
-  pointerStartY = 0;
-  pointerStartAt = 0;
 }
 
 function handleWheel(event) {
@@ -1376,29 +1362,6 @@ function handleWheel(event) {
   const direction = wheelDelta > 0 ? 1 : -1;
   wheelDelta = 0;
   snapToRelative(direction);
-}
-
-function handleTouchEnd(event) {
-  const touch = event.changedTouches[0];
-  if (!touch || !touchStartAt) return;
-
-  finishSwipe(touchStartX, touchStartY, touch.clientX, touch.clientY, touchStartAt);
-  touchStartAt = 0;
-}
-
-function finishSwipe(startX, startY, endX, endY, startedAt) {
-  const deltaY = startY - endY;
-  const deltaX = startX - endX;
-  const elapsed = Math.max(1, performance.now() - startedAt);
-  const velocity = Math.abs(deltaY) / elapsed;
-  if (Math.abs(deltaY) <= Math.abs(deltaX) || performance.now() < snapLockedUntil) return;
-  if (Math.abs(deltaY) > SWIPE_DISTANCE || velocity > SWIPE_VELOCITY) {
-    boardTapLockedUntil = performance.now() + BOARD_TAP_LOCK_MS;
-    snapToRelative(deltaY > 0 ? 1 : -1);
-    return;
-  }
-
-  snapToIndex(clampIndex(feed.scrollTop / pageHeight()), "smooth");
 }
 
 function bindActions() {
@@ -1452,16 +1415,18 @@ boot();
 async function boot() {
   await loadPuzzles();
 
-  try {
-    applySavedState(await readSavedState());
-  } catch {}
+  if (!PERF_MODE) {
+    try {
+      applySavedState(await readSavedState());
+    } catch {}
+  }
 
   buildFeed();
   watchPanels();
   bindSwipeNavigation();
   bindActions();
   updateDock();
-  setupPersistence();
+  if (!PERF_MODE) setupPersistence();
   registerServiceWorker();
   document.documentElement.dataset.moveRush = "ready";
   publishPerfSnapshot();
