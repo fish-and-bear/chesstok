@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "50";
+const ASSET_VERSION = "51";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -80,6 +80,7 @@ const comboToast = document.querySelector("#comboToast");
 const saveIcon = saveButton.querySelector("span");
 const saveCount = document.querySelector("#saveCount");
 const saveLabel = document.querySelector("#saveLabel");
+const skipLabel = skipButton.nextElementSibling;
 const savedFilterButton = document.querySelector("#savedFilterButton");
 const savedFilterCount = document.querySelector("#savedFilterCount");
 
@@ -1364,13 +1365,18 @@ function solve(state) {
 
 function scheduleAutoAdvance(state) {
   clearAutoAdvance(state);
+  const delay = isRush() ? 900 : 1400;
+  state.panel?.style.setProperty("--advance-ms", `${delay}ms`);
+  state.panel?.classList.add("advancing");
   state.advanceTimer = window.setTimeout(() => {
     state.advanceTimer = 0;
+    state.panel?.classList.remove("advancing");
     if (session.active === state.index && state.reviewPly === null) goToNext();
-  }, isRush() ? 900 : 1400);
+  }, delay);
 }
 
 function clearAutoAdvance(state) {
+  state?.panel?.classList.remove("advancing");
   if (!state?.advanceTimer) return;
   window.clearTimeout(state.advanceTimer);
   state.advanceTimer = 0;
@@ -1501,6 +1507,10 @@ function updateDock() {
   updateXpMeter();
   updateClockDisplay();
   document.body.classList.toggle("rush-mode", isRush());
+  document.body.classList.toggle("saved-mode", session.feedMode === "saved");
+  skipButton.setAttribute("aria-label", session.feedMode === "saved" ? "Next saved puzzle" : "Skip puzzle");
+  skipButton.title = session.feedMode === "saved" ? "Next" : "Skip";
+  if (skipLabel) skipLabel.textContent = session.feedMode === "saved" ? "Next" : "Skip";
   updateSaveControl(favorite);
   revealButton.disabled = state.solved;
   revealButton.setAttribute("aria-disabled", state.solved ? "true" : "false");
@@ -1753,7 +1763,7 @@ function resetActive() {
   fresh.feedback = old.feedback;
   fresh.activatedAt = performance.now();
   session.states[session.active] = fresh;
-  old.panel.classList.remove("solved", "revealed", "shake", "select", "hit", "replying");
+  old.panel.classList.remove("solved", "revealed", "shake", "select", "hit", "replying", "advancing");
   old.pulse?.replaceChildren();
   old.floaters?.replaceChildren();
   markFeedback(fresh, "");
@@ -1804,6 +1814,11 @@ function skipActive() {
   state.badSquares = [];
   state.panel.classList.remove("select", "shake", "replying");
   renderBoard(state);
+  if (session.feedMode === "saved") {
+    markFeedback(state, "");
+    goToNext();
+    return;
+  }
   session.flow = Math.max(0, session.flow - 6);
   adaptUpcomingPuzzles();
   markFeedback(state, "Skipped");

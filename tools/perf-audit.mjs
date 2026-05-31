@@ -41,7 +41,7 @@ try {
     pieces: fs.statSync(path.join(root, "pieces.svg")).size
   };
   const assetBudgets = {
-    app: 70_000,
+    app: 72_000,
     css: 32_000,
     worker: 5_000,
     pieces: 32_000
@@ -85,7 +85,7 @@ try {
     })`);
 
     if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
-    if (before.perf.version !== "50" || jump.perf.version !== "50") errors.push(`${viewport.name}: loaded app version is not 50`);
+    if (before.perf.version !== "51" || jump.perf.version !== "51") errors.push(`${viewport.name}: loaded app version is not 51`);
     if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
     if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
     if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);

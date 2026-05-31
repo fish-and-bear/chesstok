@@ -1,13 +1,13 @@
-const CACHE_NAME = "chesstok-v50";
+const CACHE_NAME = "chesstok-v51";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=50",
-  "./app.js?v=50",
-  "./puzzles.js?v=50",
+  "./styles.css?v=51",
+  "./app.js?v=51",
+  "./puzzles.js?v=51",
   "./vendor/chess.mjs",
   "./manifest.webmanifest",
-  "./pieces.svg?v=50",
+  "./pieces.svg?v=51",
   "./icon.svg",
   "./icon-192.png",
   "./icon-512.png"
