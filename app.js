@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "15";
+const ASSET_VERSION = "16";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -424,17 +424,21 @@ function preparePuzzle(puzzle, index) {
 }
 
 function buildFeed() {
-  session.puzzles = [...PUZZLES].sort((a, b) => {
+  const ranked = [...PUZZLES].sort((a, b) => {
     const distanceA = Math.abs(a.rating - session.band);
     const distanceB = Math.abs(b.rating - session.band);
     return distanceA - distanceB || b.popularity - a.popularity;
   });
+  const unsolved = ranked.filter((puzzle) => !session.solvedIds.has(puzzle.id));
+  const savedRank = session.lastPuzzleId ? ranked.findIndex((puzzle) => puzzle.id === session.lastPuzzleId) : -1;
+
+  session.puzzles = unsolved.length ? unsolved : ranked;
 
   session.states = new Array(session.puzzles.length).fill(null);
   session.panels = [];
   session.mounted.clear();
   session.cached.clear();
-  const savedIndex = session.lastPuzzleId ? session.puzzles.findIndex((puzzle) => puzzle.id === session.lastPuzzleId) : -1;
+  const savedIndex = findStartIndexAfterRefresh(savedRank, ranked);
   const startIndex = savedIndex >= 0 ? savedIndex : 0;
 
   const stage = document.createElement("div");
@@ -459,6 +463,28 @@ function buildFeed() {
   if (startIndex > 0) {
     window.requestAnimationFrame(() => scrollToPanel(startIndex, "auto"));
   }
+}
+
+function findStartIndexAfterRefresh(savedRank, ranked) {
+  if (!session.lastPuzzleId) return -1;
+
+  const exactIndex = session.puzzles.findIndex((puzzle) => puzzle.id === session.lastPuzzleId);
+  if (exactIndex >= 0) return exactIndex;
+  if (savedRank < 0) return -1;
+
+  const nextPuzzle =
+    findUnsolvedFromFullRank(ranked, savedRank + 1, 1) ||
+    findUnsolvedFromFullRank(ranked, savedRank - 1, -1) ||
+    null;
+  return nextPuzzle ? session.puzzles.findIndex((puzzle) => puzzle.id === nextPuzzle.id) : -1;
+}
+
+function findUnsolvedFromFullRank(puzzles, start, step) {
+  for (let index = start; index >= 0 && index < puzzles.length; index += step) {
+    const puzzle = puzzles[index];
+    if (puzzle && !session.solvedIds.has(puzzle.id)) return puzzle;
+  }
+  return null;
 }
 
 function ensureState(index) {
