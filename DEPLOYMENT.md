@@ -1,6 +1,6 @@
 # Deployment
 
-Move Rush is a static site. The deploy root is this folder.
+Chesstok is a static site. The deploy root is this folder.
 
 Preflight:
 

@@ -84,7 +84,7 @@ try {
     })`);
 
     if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
-    if (before.perf.version !== "24" || jump.perf.version !== "24") errors.push(`${viewport.name}: loaded app version is not 24`);
+    if (before.perf.version !== "25" || jump.perf.version !== "25") errors.push(`${viewport.name}: loaded app version is not 25`);
     if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
     if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
     if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);
@@ -146,7 +146,7 @@ function snapshotExpression() {
     const clipped = (rect) => rect ? rect.left < -1 || rect.right > innerWidth + 1 || rect.top < -1 || rect.bottom > innerHeight + 1 : true;
     const overlaps = (a, b) => a && b && a.left < b.right - 3 && a.right > b.left + 3 && a.top < b.bottom - 3 && a.bottom > b.top + 3;
     return {
-      ready: document.documentElement.dataset.moveRush,
+      ready: document.documentElement.dataset.chesstok,
       active: document.querySelector(".reel.active")?.dataset.index || "",
       perf: window.__chesstokPerf || {
         version: "",
@@ -178,7 +178,7 @@ function snapshotExpression() {
 async function waitReady(cdp) {
   const deadline = Date.now() + 10000;
   while (Date.now() < deadline) {
-    const ready = await evaluate(cdp, "document.documentElement.dataset.moveRush");
+    const ready = await evaluate(cdp, "document.documentElement.dataset.chesstok");
     if (ready === "ready") return;
     await delay(100);
   }

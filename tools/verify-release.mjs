@@ -238,39 +238,48 @@ function checkSourceHygiene() {
     if (app.includes(blocked)) fail(`app.js should not use ${blocked}`);
   }
 
+  const sourceBundle = `${app}\n${index}\n${styles}\n${read("service-worker.js")}\n${read("_headers")}`;
+  const legacyBuildSlug = ["move", "rush"].join("-");
   for (const stale of [
     "rankLabel",
     "questLabel",
     "progressLabel",
     "intentLabel",
-    "move-rush-v8",
+    `${legacyBuildSlug}-v8`,
     "?v=8",
-    "move-rush-v13",
+    `${legacyBuildSlug}-v13`,
     "?v=13",
-    "move-rush-v14",
+    `${legacyBuildSlug}-v14`,
     "?v=14",
-    "move-rush-v15",
+    `${legacyBuildSlug}-v15`,
     "?v=15",
-    "move-rush-v16",
+    `${legacyBuildSlug}-v16`,
     "?v=16",
-    "move-rush-v17",
+    `${legacyBuildSlug}-v17`,
     "?v=17",
-    "move-rush-v18",
+    `${legacyBuildSlug}-v18`,
     "?v=18",
-    "move-rush-v19",
+    `${legacyBuildSlug}-v19`,
     "?v=19",
-    "move-rush-v20",
+    `${legacyBuildSlug}-v20`,
     "?v=20",
-    "move-rush-v21",
+    `${legacyBuildSlug}-v21`,
     "?v=21",
-    "move-rush-v22",
+    `${legacyBuildSlug}-v22`,
     "?v=22",
-    "move-rush-v23",
-    "?v=23"
+    `${legacyBuildSlug}-v23`,
+    "?v=23",
+    `${legacyBuildSlug}-v24`,
+    "?v=24"
   ]) {
-    if (`${app}\n${index}\n${styles}\n${read("service-worker.js")}\n${read("_headers")}`.includes(stale)) {
+    if (sourceBundle.includes(stale)) {
       fail(`Found stale UI/build token ${stale}`);
     }
+  }
+
+  const retiredNamePattern = new RegExp(`${["Move", "Rush"].join(" ")}|${["move", "Rush"].join("")}`);
+  if (retiredNamePattern.test(`${sourceBundle}\n${read("SECURITY.md")}\n${read("DEPLOYMENT.md")}`)) {
+    fail("Found retired app name in source or docs");
   }
 
   if (!read("vendor/chess.mjs").includes("Copyright (c) 2025, Jeff Hlywa")) fail("vendor/chess.mjs license notice is missing");

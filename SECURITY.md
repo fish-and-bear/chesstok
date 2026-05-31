@@ -1,6 +1,6 @@
 # Security
 
-Move Rush is a local-first static PWA. It does not collect accounts, emails,
+Chesstok is a local-first static PWA. It does not collect accounts, emails,
 payments, analytics, or personal data.
 
 What is hardened:

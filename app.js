@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "24";
+const ASSET_VERSION = "25";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -23,11 +23,16 @@ const PERF_MODE = new URLSearchParams(window.location.search).has("perf");
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const RANKS = ["8", "7", "6", "5", "4", "3", "2", "1"];
 const PUZZLE_IDS = new Set();
-const STORAGE_KEY = "move-rush-state-v2";
-const STORAGE_DB = "move-rush-db";
+const LEGACY_SLUG = ["move", "rush"].join("-");
+const STORAGE_KEY = "chesstok-state-v1";
+const LEGACY_STORAGE_KEYS = [`${LEGACY_SLUG}-state-v2`];
+const STORAGE_DB = "chesstok-db";
+const LEGACY_STORAGE_DBS = [`${LEGACY_SLUG}-db`];
 const STORAGE_STORE = "snapshots";
 const STORAGE_ID = "primary";
 const STORAGE_VERSION = 3;
+const SYNC_CHANNEL = "chesstok-state";
+const LEGACY_SYNC_CHANNELS = [`${LEGACY_SLUG}-state`];
 const SAVE_DEBOUNCE = 180;
 const STREAK_CLOCK_MS = 60_000;
 const CLOCK_TICK_MS = 250;
@@ -72,7 +77,7 @@ const clockValue = document.querySelector("#clockValue");
 const comboToast = document.querySelector("#comboToast");
 const saveIcon = saveButton.querySelector("span");
 
-document.documentElement.dataset.moveRush = "loading";
+document.documentElement.dataset.chesstok = "loading";
 const bootStartedAt = performance.now();
 
 const session = {
@@ -104,11 +109,11 @@ const session = {
 };
 
 const storageClientId = makeStorageClientId();
-let storageDbPromise = null;
+const storageDbPromises = new Map();
 let saveTimer = 0;
 let saveQueue = Promise.resolve();
 let lastAppliedAt = 0;
-let syncChannel = null;
+let syncChannels = [];
 let snapLockedUntil = 0;
 let snapClassTimer = 0;
 let boardTapLockedUntil = 0;
@@ -266,8 +271,14 @@ function chooseNewestSnapshot(localSnapshot, dbSnapshot) {
 }
 
 function readLocalSnapshot() {
+  return [STORAGE_KEY, ...LEGACY_STORAGE_KEYS]
+    .map((key) => readStoredJson(key))
+    .reduce((newest, snapshot) => chooseNewestSnapshot(newest, snapshot), null);
+}
+
+function readStoredJson(key) {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || null;
+    return JSON.parse(localStorage.getItem(key)) || null;
   } catch {
     return null;
   }
@@ -280,12 +291,30 @@ function writeLocalSnapshot(snapshot) {
 }
 
 async function readDbSnapshot() {
+  const snapshots = await Promise.all([
+    readDbSnapshotFrom(STORAGE_DB),
+    ...LEGACY_STORAGE_DBS.map((name) => readDbSnapshotFrom(name, { legacy: true }))
+  ]);
+  return snapshots.reduce((newest, snapshot) => chooseNewestSnapshot(newest, snapshot), null);
+}
+
+async function readDbSnapshotFrom(name, { legacy = false } = {}) {
   try {
-    const db = await openStorageDb();
+    if (legacy && !(await databaseExists(name))) return null;
+    const db = await openStorageDb(name);
     if (!db) return null;
     return await idbRequest(db.transaction(STORAGE_STORE, "readonly").objectStore(STORAGE_STORE).get(STORAGE_ID));
   } catch {
     return null;
+  }
+}
+
+async function databaseExists(name) {
+  try {
+    if (!indexedDB.databases) return false;
+    return (await indexedDB.databases()).some((database) => database.name === name);
+  } catch {
+    return false;
   }
 }
 
@@ -308,12 +337,12 @@ async function writeDbSnapshot(snapshot) {
   } catch {}
 }
 
-function openStorageDb() {
+function openStorageDb(name = STORAGE_DB) {
   if (!("indexedDB" in window)) return Promise.resolve(null);
-  if (storageDbPromise) return storageDbPromise;
+  if (storageDbPromises.has(name)) return storageDbPromises.get(name);
 
-  storageDbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(STORAGE_DB, STORAGE_VERSION);
+  const promise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(name, STORAGE_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORAGE_STORE)) db.createObjectStore(STORAGE_STORE, { keyPath: "id" });
@@ -322,8 +351,9 @@ function openStorageDb() {
     request.onerror = () => reject(request.error);
     request.onblocked = () => resolve(null);
   });
+  storageDbPromises.set(name, promise);
 
-  return storageDbPromise;
+  return promise;
 }
 
 function idbRequest(request) {
@@ -358,15 +388,18 @@ function setupPersistence() {
   });
 
   window.addEventListener("storage", (event) => {
-    if (event.key !== STORAGE_KEY || !event.newValue) return;
+    if (![STORAGE_KEY, ...LEGACY_STORAGE_KEYS].includes(event.key) || !event.newValue) return;
     try {
       applyExternalSnapshot(JSON.parse(event.newValue));
     } catch {}
   });
 
   if ("BroadcastChannel" in window) {
-    syncChannel = new BroadcastChannel("move-rush-state");
-    syncChannel.addEventListener("message", (event) => applyExternalSnapshot(event.data));
+    syncChannels = [SYNC_CHANNEL, ...LEGACY_SYNC_CHANNELS].map((name) => {
+      const channel = new BroadcastChannel(name);
+      channel.addEventListener("message", (event) => applyExternalSnapshot(event.data));
+      return channel;
+    });
   }
 }
 
@@ -379,7 +412,7 @@ function applyExternalSnapshot(snapshot) {
 }
 
 function broadcastSnapshot(snapshot) {
-  syncChannel?.postMessage(snapshot);
+  for (const channel of syncChannels) channel.postMessage(snapshot);
 }
 
 async function requestPersistentStorage() {
@@ -1579,7 +1612,7 @@ function resetActive() {
 function showFatalError(error) {
   console.error(error);
   stopStreakClock();
-  document.documentElement.dataset.moveRush = "error";
+  document.documentElement.dataset.chesstok = "error";
   document.body.classList.remove("clock-mid", "clock-low", "clock-expired", "rush-mode", "is-snapping");
   feed.replaceChildren(createFatalErrorPanel());
   title.textContent = "Could not load";
@@ -1806,7 +1839,7 @@ async function boot() {
     updateDock();
     if (!PERF_MODE) setupPersistence();
     registerServiceWorker();
-    document.documentElement.dataset.moveRush = "ready";
+    document.documentElement.dataset.chesstok = "ready";
     publishPerfSnapshot();
   } catch (error) {
     showFatalError(error);
