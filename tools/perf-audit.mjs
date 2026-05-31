@@ -85,7 +85,7 @@ try {
     })`);
 
     if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
-    if (before.perf.version !== "48" || jump.perf.version !== "48") errors.push(`${viewport.name}: loaded app version is not 48`);
+    if (before.perf.version !== "49" || jump.perf.version !== "49") errors.push(`${viewport.name}: loaded app version is not 49`);
     if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
     if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
     if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);
@@ -116,6 +116,7 @@ try {
   const clockExpiry = await clockExpirySnapshot(cdp, appPort);
   const reviewLine = await reviewLineSnapshot(cdp, appPort);
   const saveControl = await saveControlSnapshot(cdp, appPort);
+  const wheelSnap = await wheelSnapSnapshot(cdp, appPort);
 
   if (adaptiveHigh.target <= adaptiveLow.target + 320) {
     errors.push(`adaptive target only increased from ${adaptiveLow.target} to ${adaptiveHigh.target}`);
@@ -133,8 +134,9 @@ try {
   if (saveControl.icon !== "\u2605") errors.push(`save icon did not fill: ${saveControl.icon || "empty"}`);
   if (!saveControl.persisted) errors.push("save did not persist to local storage");
   if (!saveControl.restored) errors.push("saved puzzle state did not restore after reload");
+  if (wheelSnap.active !== "1") errors.push(`wheel gesture moved ${wheelSnap.active || "nowhere"} panels; expected 1`);
 
-  console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry, reviewLine, saveControl }, null, 2));
+  console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry, reviewLine, saveControl, wheelSnap }, null, 2));
   await cdp.close();
 } finally {
   chrome.kill("SIGTERM");
@@ -328,6 +330,41 @@ async function saveControlSnapshot(cdp, appPort) {
     ...saved,
     restored: restored.pressed === "true" && restored.countText === "1" && restored.icon === "\u2605"
   };
+}
+
+async function wheelSnapSnapshot(cdp, appPort) {
+  await cdp
+    .send("Storage.clearDataForOrigin", {
+      origin: `http://127.0.0.1:${appPort}`,
+      storageTypes: "all"
+    })
+    .catch(() => {});
+
+  await navigate(cdp, `http://127.0.0.1:${appPort}/?perf=wheel-once`);
+  await waitReady(cdp);
+  return evaluate(
+    cdp,
+    `new Promise((resolve) => {
+      const feed = document.querySelector("#feed");
+      let count = 0;
+      const burst = setInterval(() => {
+        feed.dispatchEvent(new WheelEvent("wheel", {
+          bubbles: true,
+          cancelable: true,
+          deltaY: 120,
+          deltaMode: 0
+        }));
+        count += 1;
+        if (count >= 12) {
+          clearInterval(burst);
+          setTimeout(() => resolve({
+            active: document.querySelector(".reel.active")?.dataset.index || "",
+            scrollTop: Math.round(feed.scrollTop)
+          }), 620);
+        }
+      }, 70);
+    })`
+  );
 }
 
 async function waitForHttp(url) {

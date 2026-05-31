@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "48";
+const ASSET_VERSION = "49";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -39,6 +39,8 @@ const CLOCK_TICK_MS = 250;
 const MOVE_DELAY = 420;
 const RUSH_DELAY = 260;
 const WHEEL_STEP = 34;
+const WHEEL_GESTURE_END_MS = 180;
+const SCROLL_GESTURE_END_MS = 900;
 const SNAP_LOCK_MS = 430;
 const SNAP_CLASS_MS = 520;
 const BAD_SQUARE_MS = 360;
@@ -124,6 +126,9 @@ let boardPointerStartY = 0;
 let boardPointerStartAt = 0;
 let wheelDelta = 0;
 let wheelTimer = 0;
+let wheelGestureConsumed = false;
+let scrollGestureStartIndex = null;
+let scrollGestureTimer = 0;
 let scrollSettleTimer = 0;
 let lastScrollTop = 0;
 let lastScrollDirection = 0;
@@ -1833,9 +1838,20 @@ function watchPanels() {
     { passive: true }
   );
   feed.addEventListener("scrollend", snapToNearestPanel, { passive: true });
+  feed.addEventListener("pointerdown", markScrollGestureStart, { passive: true });
+  feed.addEventListener("touchstart", markScrollGestureStart, { passive: true });
 
   window.addEventListener("resize", scheduleMetricsUpdate, { passive: true });
   window.visualViewport?.addEventListener("resize", scheduleMetricsUpdate, { passive: true });
+}
+
+function markScrollGestureStart() {
+  scrollGestureStartIndex = session.active;
+  if (scrollGestureTimer) window.clearTimeout(scrollGestureTimer);
+  scrollGestureTimer = window.setTimeout(() => {
+    scrollGestureStartIndex = null;
+    scrollGestureTimer = 0;
+  }, SCROLL_GESTURE_END_MS);
 }
 
 function snapToNearestPanel() {
@@ -1845,6 +1861,9 @@ function snapToNearestPanel() {
   let next = clampIndex(page);
   if (lastScrollDirection > 0 && progress > 0.14) next = base + 1;
   if (lastScrollDirection < 0 && progress < 0.86) next = base;
+  if (scrollGestureStartIndex !== null) {
+    next = Math.max(scrollGestureStartIndex - 1, Math.min(scrollGestureStartIndex + 1, next));
+  }
   next = clampIndex(next);
   const targetTop = scrollTopForIndex(next);
   if (Math.abs(feed.scrollTop - targetTop) <= 2) return;
@@ -1859,18 +1878,24 @@ function handleWheel(event) {
   if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
   event.preventDefault();
 
-  const now = performance.now();
-  if (now < snapLockedUntil) return;
-
-  wheelDelta += event.deltaY;
   if (wheelTimer) window.clearTimeout(wheelTimer);
   wheelTimer = window.setTimeout(() => {
     wheelDelta = 0;
-  }, 90);
+    wheelGestureConsumed = false;
+  }, WHEEL_GESTURE_END_MS);
 
+  const now = performance.now();
+  if (wheelGestureConsumed) return;
+  if (now < snapLockedUntil) {
+    wheelGestureConsumed = true;
+    return;
+  }
+
+  wheelDelta += event.deltaY;
   if (Math.abs(wheelDelta) < WHEEL_STEP) return;
   const direction = wheelDelta > 0 ? 1 : -1;
   wheelDelta = 0;
+  wheelGestureConsumed = true;
   snapToRelative(direction);
 }
 
@@ -2072,8 +2097,14 @@ function stopStreakClock() {
   if (clockResetTimer) window.clearTimeout(clockResetTimer);
   if (xpBumpTimer) window.clearTimeout(xpBumpTimer);
   if (savePopTimer) window.clearTimeout(savePopTimer);
+  if (wheelTimer) window.clearTimeout(wheelTimer);
+  if (scrollGestureTimer) window.clearTimeout(scrollGestureTimer);
   clockInterval = 0;
   clockResetTimer = 0;
   xpBumpTimer = 0;
   savePopTimer = 0;
+  wheelTimer = 0;
+  wheelGestureConsumed = false;
+  scrollGestureStartIndex = null;
+  scrollGestureTimer = 0;
 }
