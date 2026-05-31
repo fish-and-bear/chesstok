@@ -100,14 +100,47 @@ button {
   display: block;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, var(--good), var(--warn));
-  transform: scaleX(0.28);
+  background: linear-gradient(90deg, var(--good), var(--ink));
+  transform: scaleX(1);
   transform-origin: left center;
-  transition: transform 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform 220ms linear, background 180ms ease;
 }
 
-body.rush-mode .flow-meter span {
-  background: linear-gradient(90deg, #91cf74, #e2bd63, #f5f1e8);
+body.clock-low .flow-meter span {
+  background: linear-gradient(90deg, var(--warn), var(--ink));
+}
+
+body.clock-expired .flow-meter span {
+  background: linear-gradient(90deg, var(--bad), var(--warn));
+}
+
+.clock-value {
+  position: fixed;
+  z-index: 31;
+  top: max(8px, calc(env(safe-area-inset-top) + 4px));
+  left: 50%;
+  min-width: 38px;
+  padding: 4px 7px 3px;
+  border: 1px solid rgba(245, 241, 232, 0.14);
+  border-radius: 999px;
+  background: rgba(16, 21, 18, 0.78);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+body.clock-low .clock-value {
+  border-color: rgba(226, 189, 99, 0.36);
+  color: #f5df9a;
+}
+
+body.clock-expired .clock-value {
+  border-color: rgba(217, 95, 79, 0.48);
+  color: #ffd3ca;
 }
 
 .hud {

@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "19";
+const ASSET_VERSION = "20";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -28,6 +28,8 @@ const STORAGE_STORE = "snapshots";
 const STORAGE_ID = "primary";
 const STORAGE_VERSION = 3;
 const SAVE_DEBOUNCE = 180;
+const STREAK_CLOCK_MS = 90_000;
+const CLOCK_TICK_MS = 250;
 const MOVE_DELAY = 420;
 const RUSH_DELAY = 260;
 const WHEEL_STEP = 34;
@@ -61,6 +63,7 @@ const revealButton = document.querySelector("#revealButton");
 const saveButton = document.querySelector("#saveButton");
 const resetButton = document.querySelector("#resetButton");
 const flowFill = document.querySelector("#flowFill");
+const clockValue = document.querySelector("#clockValue");
 const comboToast = document.querySelector("#comboToast");
 const saveIcon = saveButton.querySelector("span");
 
@@ -79,6 +82,7 @@ const session = {
   questProgress: 0,
   band: 1200,
   flow: 28,
+  clockRemainingMs: STREAK_CLOCK_MS,
   lastPuzzleId: "",
   favorites: new Set(),
   solvedIds: new Set(),
@@ -118,6 +122,11 @@ let lastStreakText = "";
 let lastSolvedText = "";
 let lastLineKey = "";
 let lastAdaptKey = "";
+let lastClockText = "";
+let clockInterval = 0;
+let clockResetTimer = 0;
+let clockLastTick = 0;
+let clockExpired = false;
 
 async function readSavedState() {
   const localSnapshot = readLocalSnapshot();
@@ -145,6 +154,7 @@ function applySavedState(saved) {
   session.questProgress = normalized.questProgress;
   session.band = normalized.band;
   session.flow = normalized.flow;
+  session.clockRemainingMs = normalized.clockRemainingMs;
   session.lastPuzzleId = normalized.lastPuzzleId;
   session.favorites = new Set(normalized.favorites);
   session.solvedIds = new Set(normalized.solvedIds);
@@ -170,6 +180,7 @@ function saveState({ immediate = false, broadcast = true } = {}) {
 }
 
 function createSnapshot() {
+  syncStreakClock({ allowExpire: false });
   return normalizeSnapshot({
     schemaVersion: STORAGE_VERSION,
     updatedAt: Date.now(),
@@ -183,6 +194,7 @@ function createSnapshot() {
     questProgress: session.questProgress,
     band: session.band,
     flow: session.flow,
+    clockRemainingMs: session.clockRemainingMs,
     lastPuzzleId: session.lastPuzzleId,
     favorites: [...session.favorites],
     solvedIds: [...session.solvedIds]
@@ -198,6 +210,7 @@ function normalizeSnapshot(value) {
   const cleanRun = Math.min(safeInteger(value.cleanRun, 0, 0, 1000000), streak);
   const xpLimit = solved ? 1000 + solved * 260 : 0;
   const questProgress = Math.min(safeInteger(value.questProgress, 0, 0, 1000000), solved);
+  const clockRemainingMs = safeInteger(value.clockRemainingMs, STREAK_CLOCK_MS, 0, STREAK_CLOCK_MS);
   const lastPuzzleId = typeof value.lastPuzzleId === "string" && PUZZLE_IDS.has(value.lastPuzzleId) ? value.lastPuzzleId : "";
 
   return {
@@ -214,6 +227,7 @@ function normalizeSnapshot(value) {
     questProgress,
     band: safeInteger(value.band, 1200, 300, 3200),
     flow: safeInteger(value.flow, 28, 0, 100),
+    clockRemainingMs,
     lastPuzzleId,
     favorites,
     solvedIds
@@ -322,9 +336,17 @@ function transactionDone(transaction) {
 function setupPersistence() {
   requestPersistentStorage();
 
-  window.addEventListener("pagehide", () => saveState({ immediate: true, broadcast: false }));
+  window.addEventListener("pagehide", () => {
+    syncStreakClock({ allowExpire: false });
+    saveState({ immediate: true, broadcast: false });
+  });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") saveState({ immediate: true, broadcast: false });
+    if (document.visibilityState === "hidden") {
+      syncStreakClock({ allowExpire: false });
+      saveState({ immediate: true, broadcast: false });
+      return;
+    }
+    clockLastTick = performance.now();
   });
 
   window.addEventListener("storage", (event) => {
@@ -490,6 +512,77 @@ function findUnsolvedFromFullRank(puzzles, start, step) {
     if (puzzle && !session.solvedIds.has(puzzle.id)) return puzzle;
   }
   return null;
+}
+
+function startStreakClock() {
+  clockLastTick = performance.now();
+  if (clockInterval) window.clearInterval(clockInterval);
+  clockInterval = window.setInterval(syncStreakClock, CLOCK_TICK_MS);
+  updateClockDisplay();
+}
+
+function syncStreakClock({ allowExpire = true } = {}) {
+  if (clockExpired || document.visibilityState === "hidden") return;
+  const now = performance.now();
+  const elapsed = clockLastTick ? now - clockLastTick : 0;
+  clockLastTick = now;
+  if (elapsed <= 0) {
+    updateClockDisplay();
+    return;
+  }
+
+  session.clockRemainingMs = Math.max(0, session.clockRemainingMs - elapsed);
+  if (session.clockRemainingMs <= 0 && allowExpire) {
+    expireStreakClock();
+    return;
+  }
+  updateClockDisplay();
+}
+
+function resetStreakClock() {
+  if (clockResetTimer) window.clearTimeout(clockResetTimer);
+  clockResetTimer = 0;
+  clockExpired = false;
+  session.clockRemainingMs = STREAK_CLOCK_MS;
+  clockLastTick = performance.now();
+  document.body.classList.remove("clock-expired");
+  updateClockDisplay();
+}
+
+function expireStreakClock() {
+  if (clockExpired) return;
+  clockExpired = true;
+  const hadStreak = session.streak > 0 || session.cleanRun > 0;
+  session.clockRemainingMs = 0;
+  session.streak = 0;
+  session.cleanRun = 0;
+  session.flow = Math.max(0, session.flow - (hadStreak ? 22 : 10));
+  adaptUpcomingPuzzles();
+  document.body.classList.add("clock-expired");
+  updateDock();
+  updateClockDisplay();
+  if (hadStreak) {
+    flash("Streak reset");
+    tick("wrong");
+  }
+  saveState();
+  clockResetTimer = window.setTimeout(() => {
+    resetStreakClock();
+    saveState();
+  }, 650);
+}
+
+function updateClockDisplay() {
+  const remaining = Math.max(0, Math.min(STREAK_CLOCK_MS, session.clockRemainingMs));
+  const ratio = remaining / STREAK_CLOCK_MS;
+  flowFill.style.transform = `scaleX(${ratio})`;
+  const nextClockText = `${Math.ceil(remaining / 1000)}s`;
+  if (lastClockText !== nextClockText) {
+    clockValue.textContent = nextClockText;
+    lastClockText = nextClockText;
+  }
+  document.body.classList.toggle("clock-low", remaining > 0 && remaining <= 15_000);
+  clockValue.setAttribute("aria-label", `${nextClockText} left to keep streak`);
 }
 
 function rankPuzzlesForTarget(target) {
@@ -1009,6 +1102,7 @@ function miss(state, text, squares = []) {
   session.streak = 0;
   session.cleanRun = 0;
   session.flow = Math.max(0, session.flow - 24);
+  resetStreakClock();
   adaptUpcomingPuzzles();
   state.panel.classList.remove("shake");
   void state.panel.offsetWidth;
@@ -1041,6 +1135,7 @@ function solve(state) {
     session.streak = 0;
     session.cleanRun = 0;
     session.flow = Math.max(0, session.flow - 8);
+    resetStreakClock();
     adaptUpcomingPuzzles();
     markFeedback(state, "Practice");
     updateDock();
@@ -1053,6 +1148,7 @@ function solve(state) {
 
   if (alreadyCounted) {
     session.flow = Math.min(100, session.flow + 10);
+    resetStreakClock();
     adaptUpcomingPuzzles();
     markFeedback(state, "Solved");
     burst(state);
@@ -1071,6 +1167,7 @@ function solve(state) {
   session.cleanRun = clean ? session.cleanRun + 1 : 0;
   session.flow = Math.min(100, session.flow + 26);
   session.band = Math.round(session.band * 0.82 + state.puzzle.rating * 0.18 + Math.min(session.streak, 8) * 10);
+  resetStreakClock();
   adaptUpcomingPuzzles();
   const xp = awardSolveXp(state, clean, usedAnswer);
   const questBonus = updateQuest(clean);
@@ -1250,7 +1347,7 @@ function updateDock() {
     solvedValue.textContent = nextSolved;
     lastSolvedText = nextSolved;
   }
-  flowFill.style.transform = `scaleX(${Math.max(0.04, session.flow / 100)})`;
+  updateClockDisplay();
   document.body.classList.toggle("rush-mode", isRush());
   saveButton.classList.toggle("active", favorite);
   saveButton.setAttribute("aria-pressed", favorite ? "true" : "false");
@@ -1348,6 +1445,7 @@ function revealActive() {
   if (!state.revealed && !state.solved) {
     session.streak = 0;
     session.cleanRun = 0;
+    resetStreakClock();
   }
   state.revealed = true;
   state.selected = null;
@@ -1573,6 +1671,7 @@ async function boot() {
   watchPanels();
   bindSwipeNavigation();
   bindActions();
+  startStreakClock();
   updateDock();
   if (!PERF_MODE) setupPersistence();
   registerServiceWorker();
@@ -1621,6 +1720,7 @@ function publishPerfSnapshot() {
     mountedBoards: session.mounted.size,
     liveReels: document.querySelectorAll(".reel").length,
     nodes: document.querySelectorAll("*").length,
+    clockRemainingMs: Math.round(session.clockRemainingMs),
     adaptive: {
       target: adaptiveTargetRating(),
       streak: session.streak,
@@ -1649,6 +1749,7 @@ function applyPerfOverrides() {
   session.cleanRun = Math.min(session.streak, perfIntegerParam(params, "clean", session.cleanRun, 0, 1000));
   session.band = perfIntegerParam(params, "band", session.band, MIN_PUZZLE_RATING, MAX_PUZZLE_RATING);
   session.flow = perfIntegerParam(params, "flow", session.flow, 0, 100);
+  session.clockRemainingMs = perfIntegerParam(params, "clock", session.clockRemainingMs / 1000, 0, 90) * 1000;
 }
 
 function perfIntegerParam(params, key, fallback, min, max) {

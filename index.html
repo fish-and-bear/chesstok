@@ -11,16 +11,17 @@
     <link rel="icon" href="./icon.svg" type="image/svg+xml">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="Chesstok">
-    <link rel="preload" href="./pieces.svg?v=19" as="image" type="image/svg+xml">
+    <link rel="preload" href="./pieces.svg?v=20" as="image" type="image/svg+xml">
     <link rel="modulepreload" href="./vendor/chess.mjs">
-    <link rel="modulepreload" href="./puzzles.js?v=19">
-    <link rel="stylesheet" href="./styles.css?v=19">
+    <link rel="modulepreload" href="./puzzles.js?v=20">
+    <link rel="stylesheet" href="./styles.css?v=20">
   </head>
   <body>
     <main class="app-shell">
-      <div class="flow-meter" aria-label="Flow">
+      <div class="flow-meter" aria-label="Streak clock">
         <span id="flowFill"></span>
       </div>
+      <div id="clockValue" class="clock-value" aria-live="off">90s</div>
       <header class="hud" aria-label="Session">
         <div>
           <p class="kicker">Chesstok</p>
@@ -65,6 +66,6 @@
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
     </main>
 
-    <script type="module" src="./app.js?v=19"></script>
+    <script type="module" src="./app.js?v=20"></script>
   </body>
 </html>

@@ -76,6 +76,7 @@ try {
     if (before.boardClipped || jump.boardClipped) errors.push(`${viewport.name}: board is clipped`);
     if (before.railClipped || jump.railClipped) errors.push(`${viewport.name}: action rail is clipped`);
     if (before.railOverlapsBoard || jump.railOverlapsBoard) errors.push(`${viewport.name}: action rail overlaps the board`);
+    if (!before.clockText || !jump.clockText) errors.push(`${viewport.name}: streak clock text is missing`);
     if (viewport.width <= 640 && (before.boardCenterOffset > 1 || jump.boardCenterOffset > 1)) {
       errors.push(`${viewport.name}: board is ${Math.max(before.boardCenterOffset, jump.boardCenterOffset)}px off center`);
     }
@@ -92,6 +93,7 @@ try {
   });
   const adaptiveLow = await adaptiveSnapshot(cdp, appPort, { streak: 0, band: 1200, flow: 18 });
   const adaptiveHigh = await adaptiveSnapshot(cdp, appPort, { streak: 9, band: 1200, flow: 88 });
+  const clockExpiry = await clockExpirySnapshot(cdp, appPort);
 
   if (adaptiveHigh.target <= adaptiveLow.target + 320) {
     errors.push(`adaptive target only increased from ${adaptiveLow.target} to ${adaptiveHigh.target}`);
@@ -99,8 +101,10 @@ try {
   if (adaptiveHigh.upcomingAverage <= adaptiveLow.upcomingAverage + 220) {
     errors.push(`adaptive feed average only increased from ${adaptiveLow.upcomingAverage} to ${adaptiveHigh.upcomingAverage}`);
   }
+  if (clockExpiry.streak !== "0") errors.push(`clock expiry left streak at ${clockExpiry.streak}`);
+  if (clockExpiry.clockSeconds < 88) errors.push(`clock did not restart after expiry: ${clockExpiry.clockText}`);
 
-  console.log(JSON.stringify({ puzzleBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh } }, null, 2));
+  console.log(JSON.stringify({ puzzleBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry }, null, 2));
   await cdp.close();
 } finally {
   chrome.kill("SIGTERM");
@@ -137,6 +141,7 @@ function snapshotExpression() {
       nodes: document.querySelectorAll("*").length,
       scrollTop: Math.round(feed.scrollTop),
       scrollHeight: Math.round(feed.scrollHeight),
+      clockText: document.querySelector("#clockValue")?.textContent || "",
       board: board ? { x: Math.round(board.left), y: Math.round(board.top), w: Math.round(board.width), h: Math.round(board.height) } : null,
       rail: rail ? { x: Math.round(rail.left), y: Math.round(rail.top), w: Math.round(rail.width), h: Math.round(rail.height) } : null,
       boardCenterOffset: board ? Math.round(Math.abs((board.left + board.width / 2) - innerWidth / 2)) : 999,
@@ -174,6 +179,37 @@ async function adaptiveSnapshot(cdp, appPort, profile) {
   await navigate(cdp, `http://127.0.0.1:${appPort}/?${params}`);
   await waitReady(cdp);
   return evaluate(cdp, "window.__chesstokPerf.adaptive");
+}
+
+async function clockExpirySnapshot(cdp, appPort) {
+  await cdp
+    .send("Storage.clearDataForOrigin", {
+      origin: `http://127.0.0.1:${appPort}`,
+      storageTypes: "all"
+    })
+    .catch(() => {});
+
+  const params = new URLSearchParams({
+    perf: "clock-expiry",
+    streak: "5",
+    band: "1200",
+    flow: "80",
+    clock: "1"
+  });
+  await navigate(cdp, `http://127.0.0.1:${appPort}/?${params}`);
+  await waitReady(cdp);
+  await delay(1800);
+  return evaluate(
+    cdp,
+    `(() => {
+      const clockText = document.querySelector("#clockValue")?.textContent || "";
+      return {
+        streak: document.querySelector("#streakValue")?.textContent || "",
+        clockText,
+        clockSeconds: Number(clockText.replace(/\\D/g, "")) || 0
+      };
+    })()`
+  );
 }
 
 async function waitForHttp(url) {
