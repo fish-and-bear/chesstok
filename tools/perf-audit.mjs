@@ -41,7 +41,7 @@ try {
     pieces: fs.statSync(path.join(root, "pieces.svg")).size
   };
   const assetBudgets = {
-    app: 72_000,
+    app: 76_000,
     css: 32_000,
     worker: 5_000,
     pieces: 32_000
@@ -85,7 +85,7 @@ try {
     })`);
 
     if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
-    if (before.perf.version !== "55" || jump.perf.version !== "55") errors.push(`${viewport.name}: loaded app version is not 55`);
+    if (before.perf.version !== "56" || jump.perf.version !== "56") errors.push(`${viewport.name}: loaded app version is not 56`);
     if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
     if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
     if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);
@@ -118,6 +118,7 @@ try {
   const saveControl = await saveControlSnapshot(cdp, appPort);
   const savedFeed = await savedFeedSnapshot(cdp, appPort);
   const wheelSnap = await wheelSnapSnapshot(cdp, appPort);
+  const touchSnap = await touchSnapSnapshot(cdp, appPort);
   const resetRetry = await resetRetrySnapshot(cdp, appPort);
 
   if (adaptiveHigh.target <= adaptiveLow.target + 320) {
@@ -141,12 +142,14 @@ try {
   if (savedFeed.countText !== "1") errors.push(`saved library count did not show 1: ${savedFeed.countText || "empty"}`);
   if (savedFeed.backMode !== "all") errors.push(`saved library did not return to all puzzles: ${savedFeed.backMode || "none"}`);
   if (wheelSnap.active !== "1") errors.push(`wheel gesture moved ${wheelSnap.active || "nowhere"} panels; expected 1`);
+  if (touchSnap.active !== "1") errors.push(`touch swipe moved ${touchSnap.active || "nowhere"} panels; expected 1`);
+  if (touchSnap.offsetFromPanel > 2) errors.push(`touch swipe left feed ${touchSnap.offsetFromPanel}px from snap point`);
   if (!resetRetry.moveChangedBoard) errors.push("retry audit did not make a puzzle move before resetting");
   if (!resetRetry.resetRestoredBoard) errors.push("retry button did not restore the board");
   if (!resetRetry.replyStayedCanceled) errors.push("retry button allowed a delayed reply after reset");
   if (resetRetry.replyingClass) errors.push("retry button left the puzzle in replying state");
 
-  console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry, reviewLine, saveControl, savedFeed, wheelSnap, resetRetry }, null, 2));
+  console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry, reviewLine, saveControl, savedFeed, wheelSnap, touchSnap, resetRetry }, null, 2));
   await cdp.close();
 } finally {
   chrome.kill("SIGTERM");
@@ -413,6 +416,58 @@ async function wheelSnapSnapshot(cdp, appPort) {
   );
 }
 
+async function touchSnapSnapshot(cdp, appPort) {
+  await cdp
+    .send("Storage.clearDataForOrigin", {
+      origin: `http://127.0.0.1:${appPort}`,
+      storageTypes: "all"
+    })
+    .catch(() => {});
+
+  await navigate(cdp, `http://127.0.0.1:${appPort}/?perf=touch-snap`);
+  await waitReady(cdp);
+  const start = await evaluate(
+    cdp,
+    `(() => {
+      const feed = document.querySelector("#feed");
+      const rect = feed.getBoundingClientRect();
+      return {
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height * 0.68),
+        page: feed.clientHeight
+      };
+    })()`
+  );
+
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ x: start.x, y: start.y, radiusX: 1, radiusY: 1, id: 1 }]
+  });
+  for (const offset of [24, 52, 86, 124]) {
+    await delay(18);
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x: start.x, y: start.y - offset, radiusX: 1, radiusY: 1, id: 1 }]
+    });
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await delay(720);
+
+  return evaluate(
+    cdp,
+    `(() => {
+      const feed = document.querySelector("#feed");
+      const active = document.querySelector(".reel.active")?.dataset.index || "";
+      return {
+        active,
+        scrollTop: Math.round(feed.scrollTop),
+        page: feed.clientHeight,
+        offsetFromPanel: Math.abs(Math.round(feed.scrollTop - feed.clientHeight))
+      };
+    })()`
+  );
+}
+
 async function resetRetrySnapshot(cdp, appPort) {
   await cdp
     .send("Storage.clearDataForOrigin", {
@@ -432,7 +487,7 @@ async function resetRetrySnapshot(cdp, appPort) {
           .map((square) => [square.dataset.square, square.getAttribute("aria-label") || "", square.className].join(":"))
           .join("|");
       const puzzleId = activePanel()?.dataset.puzzleId || "";
-      const { PUZZLES } = await import("./puzzles.js?v=55");
+      const { PUZZLES } = await import("./puzzles.js?v=56");
       const puzzle = PUZZLES.find((item) => item[0] === puzzleId);
       const move = String(puzzle?.[2] || "").trim().split(/\\s+/)[1] || "";
       const from = move.slice(0, 2);

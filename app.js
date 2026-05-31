@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "55";
+const ASSET_VERSION = "56";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -38,11 +38,14 @@ const STREAK_CLOCK_MS = 60_000;
 const CLOCK_TICK_MS = 250;
 const MOVE_DELAY = 420;
 const RUSH_DELAY = 260;
-const WHEEL_STEP = 34;
+const WHEEL_STEP = 18;
 const WHEEL_GESTURE_END_MS = 180;
 const SCROLL_GESTURE_END_MS = 900;
 const SNAP_LOCK_MS = 430;
 const SNAP_CLASS_MS = 520;
+const TOUCH_CAPTURE_PX = 8;
+const TOUCH_SWIPE_PX = 34;
+const TOUCH_SWIPE_VELOCITY = 0.28;
 const BAD_SQUARE_MS = 360;
 const BOARD_PAN_LOCK_MS = 340;
 const BOARD_PAN_DISTANCE = 10;
@@ -131,6 +134,13 @@ let boardPointerStartAt = 0;
 let wheelDelta = 0;
 let wheelTimer = 0;
 let wheelGestureConsumed = false;
+let touchStartX = 0;
+let touchStartY = 0;
+let touchLastY = 0;
+let touchStartTop = 0;
+let touchStartIndex = 0;
+let touchStartAt = 0;
+let touchCaptured = false;
 let scrollGestureStartIndex = null;
 let scrollGestureTimer = 0;
 let scrollSettleTimer = 0;
@@ -632,6 +642,7 @@ function resetFeedGestureState() {
   }
   wheelDelta = wheelTimer = scrollGestureTimer = scrollSettleTimer = snapLockedUntil = snapClassTimer = 0;
   wheelGestureConsumed = false;
+  resetTouchGesture();
   scrollGestureStartIndex = null;
   document.body.classList.remove("is-snapping");
 }
@@ -1941,6 +1952,7 @@ function watchPanels() {
   let frame = 0;
   const syncActive = () => {
     frame = 0;
+    if (touchCaptured) return;
     const next = clampIndex(feed.scrollTop / pageHeight());
     if (next !== session.active) setActive(next);
   };
@@ -1960,8 +1972,9 @@ function watchPanels() {
       if (Math.abs(scrollTop - lastScrollTop) > 1) lastScrollDirection = scrollTop > lastScrollTop ? 1 : -1;
       lastScrollTop = scrollTop;
       if (!frame) frame = window.requestAnimationFrame(syncActive);
+      if (touchCaptured) return;
       if (scrollSettleTimer) window.clearTimeout(scrollSettleTimer);
-      scrollSettleTimer = window.setTimeout(snapToNearestPanel, 130);
+      scrollSettleTimer = window.setTimeout(snapToNearestPanel, 80);
     },
     { passive: true }
   );
@@ -1983,6 +1996,7 @@ function markScrollGestureStart() {
 }
 
 function snapToNearestPanel() {
+  if (touchCaptured) return;
   const page = feed.scrollTop / pageHeight();
   const base = Math.floor(page);
   const progress = page - base;
@@ -2000,6 +2014,10 @@ function snapToNearestPanel() {
 
 function bindSwipeNavigation() {
   feed.addEventListener("wheel", handleWheel, { passive: false });
+  feed.addEventListener("touchstart", handleTouchStart, { passive: true });
+  feed.addEventListener("touchmove", handleTouchMove, { passive: false });
+  feed.addEventListener("touchend", handleTouchEnd, { passive: false });
+  feed.addEventListener("touchcancel", handleTouchCancel, { passive: false });
 }
 
 function handleWheel(event) {
@@ -2025,6 +2043,89 @@ function handleWheel(event) {
   wheelDelta = 0;
   wheelGestureConsumed = true;
   snapToRelative(direction);
+}
+
+function handleTouchStart(event) {
+  if (event.touches.length !== 1) return;
+  const touch = event.touches[0];
+  touchStartX = touch.clientX;
+  touchStartY = touchLastY = touch.clientY;
+  touchStartTop = scrollTopForIndex(session.active);
+  touchStartIndex = session.active;
+  touchStartAt = performance.now();
+  touchCaptured = false;
+  scrollGestureStartIndex = session.active;
+}
+
+function handleTouchMove(event) {
+  if (!touchStartAt || event.touches.length !== 1) return;
+  const touch = event.touches[0];
+
+  const deltaX = touch.clientX - touchStartX;
+  const deltaY = touch.clientY - touchStartY;
+  touchLastY = touch.clientY;
+
+  if (!touchCaptured) {
+    if (Math.abs(deltaY) < TOUCH_CAPTURE_PX || Math.abs(deltaY) <= Math.abs(deltaX) * 1.15) return;
+    touchCaptured = true;
+    boardTapLockedUntil = performance.now() + BOARD_PAN_LOCK_MS;
+    if (scrollSettleTimer) {
+      window.clearTimeout(scrollSettleTimer);
+      scrollSettleTimer = 0;
+    }
+  }
+
+  if (event.cancelable) event.preventDefault();
+  const minTop = scrollTopForIndex(touchStartIndex - 1);
+  const maxTop = scrollTopForIndex(touchStartIndex + 1);
+  const rawTop = touchStartTop - deltaY;
+  const nextTop = Math.max(minTop, Math.min(maxTop, rawTop));
+  if (Math.abs(feed.scrollTop - nextTop) > 0.5) feed.scrollTop = nextTop;
+}
+
+function handleTouchEnd(event) {
+  if (!touchStartAt) return;
+  const touch = event.changedTouches[0];
+  const captured = touchCaptured;
+  const startY = touchStartY;
+  const startIndex = touchStartIndex;
+  const startedAt = touchStartAt;
+  const endY = touch?.clientY ?? touchLastY;
+  resetTouchGesture();
+  if (scrollGestureTimer) {
+    window.clearTimeout(scrollGestureTimer);
+    scrollGestureTimer = 0;
+  }
+  scrollGestureStartIndex = null;
+
+  if (!captured) return;
+  if (event.cancelable) event.preventDefault();
+
+  const deltaY = endY - startY;
+  const elapsed = Math.max(1, performance.now() - startedAt);
+  const velocity = deltaY / elapsed;
+  const distanceThreshold = Math.min(72, Math.max(TOUCH_SWIPE_PX, pageHeight() * 0.045));
+  let direction = 0;
+
+  if (Math.abs(deltaY) >= distanceThreshold || Math.abs(velocity) >= TOUCH_SWIPE_VELOCITY) {
+    direction = deltaY < 0 ? 1 : -1;
+  }
+
+  const target = direction ? startIndex + direction : Math.round(feed.scrollTop / pageHeight());
+  snapToIndex(clampIndex(target), "smooth");
+}
+
+function handleTouchCancel() {
+  if (!touchStartAt) return;
+  const target = touchStartIndex;
+  resetTouchGesture();
+  scrollGestureStartIndex = null;
+  snapToIndex(target, "smooth");
+}
+
+function resetTouchGesture() {
+  touchStartX = touchStartY = touchLastY = touchStartTop = touchStartIndex = touchStartAt = 0;
+  touchCaptured = false;
 }
 
 function bindActions() {
