@@ -11,8 +11,11 @@ const errors = [];
 const viewports = [
   { name: "phone-small", width: 320, height: 568, scale: 2, mobile: true },
   { name: "phone-small-css", width: 320, height: 568, scale: 1, mobile: false },
+  { name: "iphone-se", width: 375, height: 667, scale: 2, mobile: true },
   { name: "phone", width: 390, height: 844, scale: 2, mobile: true },
+  { name: "pixel", width: 412, height: 915, scale: 2.75, mobile: true },
   { name: "phone-wide", width: 549, height: 900, scale: 2, mobile: true },
+  { name: "phone-landscape", width: 844, height: 390, scale: 2, mobile: true },
   { name: "tablet", width: 768, height: 1024, scale: 2, mobile: true },
   { name: "desktop", width: 1280, height: 800, scale: 1, mobile: false }
 ];
@@ -85,7 +88,7 @@ try {
     })`);
 
     if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
-    if (before.perf.version !== "56" || jump.perf.version !== "56") errors.push(`${viewport.name}: loaded app version is not 56`);
+    if (before.perf.version !== "57" || jump.perf.version !== "57") errors.push(`${viewport.name}: loaded app version is not 57`);
     if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
     if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
     if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);
@@ -97,6 +100,13 @@ try {
     if (!before.xpText || !jump.xpText) errors.push(`${viewport.name}: XP meter text is missing`);
     if (before.xpClipped || jump.xpClipped) errors.push(`${viewport.name}: XP meter is clipped`);
     if (before.hudClipped || jump.hudClipped) errors.push(`${viewport.name}: HUD is clipped`);
+    if (before.clockOverBoard || jump.clockOverBoard) errors.push(`${viewport.name}: clock overlaps the board`);
+    if (viewport.mobile && (before.actionButtonMin < 42 || jump.actionButtonMin < 42)) {
+      errors.push(`${viewport.name}: action button tap target is too small`);
+    }
+    if (viewport.name.includes("landscape") && (before.hudOverBoard || jump.hudOverBoard)) {
+      errors.push(`${viewport.name}: HUD overlaps the board`);
+    }
     if (viewport.width <= 640 && (before.boardCenterOffset > 1 || jump.boardCenterOffset > 1)) {
       errors.push(`${viewport.name}: board is ${Math.max(before.boardCenterOffset, jump.boardCenterOffset)}px off center`);
     }
@@ -170,6 +180,8 @@ function snapshotExpression() {
     const rail = document.querySelector(".rail")?.getBoundingClientRect();
     const hud = document.querySelector(".hud")?.getBoundingClientRect();
     const xp = document.querySelector("#xpStat")?.getBoundingClientRect();
+    const clock = document.querySelector("#clockValue")?.getBoundingClientRect();
+    const buttons = [...document.querySelectorAll(".rail .icon-button")].map((button) => button.getBoundingClientRect());
     const root = document.documentElement.dataset;
     const clipped = (rect) => rect ? rect.left < -1 || rect.right > innerWidth + 1 || rect.top < -1 || rect.bottom > innerHeight + 1 : true;
     const overlaps = (a, b) => a && b && a.left < b.right - 3 && a.right > b.left + 3 && a.top < b.bottom - 3 && a.bottom > b.top + 3;
@@ -196,11 +208,14 @@ function snapshotExpression() {
       hud: hud ? { x: Math.round(hud.left), y: Math.round(hud.top), w: Math.round(hud.width), h: Math.round(hud.height) } : null,
       xp: xp ? { x: Math.round(xp.left), y: Math.round(xp.top), w: Math.round(xp.width), h: Math.round(xp.height) } : null,
       boardCenterOffset: board ? Math.round(Math.abs((board.left + board.width / 2) - innerWidth / 2)) : 999,
+      actionButtonMin: buttons.length ? Math.min(...buttons.map((button) => Math.round(Math.min(button.width, button.height)))) : 0,
       boardClipped: clipped(board),
       railClipped: clipped(rail),
       hudClipped: clipped(hud),
       xpClipped: clipped(xp),
-      railOverlapsBoard: overlaps(board, rail)
+      railOverlapsBoard: overlaps(board, rail),
+      hudOverBoard: overlaps(hud, board),
+      clockOverBoard: overlaps(clock, board)
     };
   })()`;
 }
@@ -487,7 +502,7 @@ async function resetRetrySnapshot(cdp, appPort) {
           .map((square) => [square.dataset.square, square.getAttribute("aria-label") || "", square.className].join(":"))
           .join("|");
       const puzzleId = activePanel()?.dataset.puzzleId || "";
-      const { PUZZLES } = await import("./puzzles.js?v=56");
+      const { PUZZLES } = await import("./puzzles.js?v=57");
       const puzzle = PUZZLES.find((item) => item[0] === puzzleId);
       const move = String(puzzle?.[2] || "").trim().split(/\\s+/)[1] || "";
       const from = move.slice(0, 2);

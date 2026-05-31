@@ -1374,8 +1374,8 @@ body.rush-mode .reel.active .board-wrap {
   :root {
     --side-gap: 14px;
     --rail-space: 14px;
-    --reel-top: 56px;
-    --reel-bottom: 58px;
+    --reel-top: 76px;
+    --reel-bottom: 38px;
     --board-breath: 12px;
     --board-max: 480px;
   }
