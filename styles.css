@@ -679,13 +679,6 @@ body.rush-mode .reel.active .board-wrap {
     0 0 24px rgba(145, 207, 116, 0.18);
 }
 
-.pulse span {
-  width: 9px;
-  height: 9px;
-  background: var(--warn);
-  animation: spark 540ms ease-out var(--d) both;
-}
-
 .reel.shake .board {
   animation: shake 250ms linear;
 }
@@ -1029,17 +1022,6 @@ body.rush-mode .reel.active .board-wrap {
   }
   100% {
     transform: translateX(-50%) scale(1);
-  }
-}
-
-@keyframes spark {
-  from {
-    opacity: 1;
-    transform: translate(0, 0) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translate(var(--x), var(--y)) scale(0.2);
   }
 }
 

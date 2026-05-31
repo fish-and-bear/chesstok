@@ -306,7 +306,9 @@ function checkSourceHygiene() {
     "chesstok-v41",
     "?v=41",
     "chesstok-v42",
-    "?v=42"
+    "?v=42",
+    "chesstok-v43",
+    "?v=43"
   ]) {
     if (sourceBundle.includes(stale)) {
       fail(`Found stale UI/build token ${stale}`);

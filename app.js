@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "43";
+const ASSET_VERSION = "44";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -1300,7 +1300,6 @@ function solve(state) {
     resetStreakClock();
     adaptUpcomingPuzzles();
     markFeedback(state, "Solved");
-    burst(state);
     updateDock();
     saveState();
     scheduleAutoAdvance(state);
@@ -1321,7 +1320,6 @@ function solve(state) {
   markFeedback(state, clean ? `+${xp + questBonus} XP` : `+${xp} XP`);
   comboFlash(session.streak, xp + questBonus);
   floatCue(state, `+${xp + questBonus}`, questBonus ? "bonus" : "good");
-  burst(state);
   updateDock();
   saveState();
   scheduleAutoAdvance(state);
@@ -1349,19 +1347,6 @@ function markFeedback(state, text) {
   if (!text) return;
   void feedback.offsetWidth;
   feedback.classList.add("pop");
-}
-
-function burst(state) {
-  const pulse = state.pulse;
-  if (!pulse) return;
-  pulse.replaceChildren();
-  for (let i = 0; i < 14; i += 1) {
-    const spark = document.createElement("span");
-    spark.style.setProperty("--x", `${Math.cos(i) * (42 + i * 4)}px`);
-    spark.style.setProperty("--y", `${Math.sin(i * 1.7) * (36 + i * 3)}px`);
-    spark.style.setProperty("--d", `${i * 24}ms`);
-    pulse.append(spark);
-  }
 }
 
 function floatCue(state, text, tone = "good") {
