@@ -148,6 +148,19 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.rating-chip {
+  display: inline-flex;
+  margin: 7px 0 0;
+  padding: 4px 7px;
+  border: 1px solid rgba(245, 241, 232, 0.13);
+  border-radius: 6px;
+  background: rgba(16, 21, 18, 0.7);
+  color: #c9d6c7;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .stats {
   flex: 0 0 auto;
   display: flex;
@@ -818,13 +831,26 @@ body.rush-mode .reel.active .board-wrap {
   }
 }
 
-@media (max-width: 520px) and (orientation: portrait) {
+@media (max-width: 640px) and (orientation: portrait) {
   :root {
     --side-gap: 10px;
     --rail-space: 10px;
     --reel-top: 72px;
     --reel-bottom: 118px;
     --board-breath: 8px;
+  }
+
+  .reel {
+    padding-right: var(--side-gap);
+    padding-left: var(--side-gap);
+  }
+
+  .board-wrap {
+    width: min(
+      var(--board-max),
+      calc(100vw - (2 * var(--side-gap)) - var(--board-breath)),
+      calc(100dvh - var(--reel-top) - var(--reel-bottom) - var(--board-breath))
+    );
   }
 
   .hud {
@@ -838,9 +864,15 @@ body.rush-mode .reel.active .board-wrap {
   }
 
   h1 {
-    max-width: 49vw;
+    max-width: 47vw;
     font-size: 19px;
     line-height: 1.08;
+  }
+
+  .rating-chip {
+    margin-top: 6px;
+    padding: 3px 6px;
+    font-size: 10px;
   }
 
   .stats {

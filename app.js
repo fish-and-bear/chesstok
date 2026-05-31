@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "17";
+const ASSET_VERSION = "18";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -46,6 +46,7 @@ const QUESTS = [
 const feed = document.querySelector("#feed");
 const toast = document.querySelector("#toast");
 const title = document.querySelector("#puzzleTitle");
+const ratingValue = document.querySelector("#ratingValue");
 const streakValue = document.querySelector("#streakValue");
 const solvedValue = document.querySelector("#solvedValue");
 const dock = document.querySelector("#dock");
@@ -106,6 +107,7 @@ let lastScrollTop = 0;
 let lastScrollDirection = 0;
 let resizeTimer = 0;
 let lastTitleText = "";
+let lastRatingText = "";
 let lastStreakText = "";
 let lastSolvedText = "";
 let lastLineKey = "";
@@ -1098,6 +1100,7 @@ function updateDock() {
   const puzzle = state.puzzle;
   const side = state.game.turn() === "w" ? "White" : "Black";
   const nextTitle = state.solved ? "Solved" : `${side} to move`;
+  const nextRating = `${puzzle.rating} · ${difficultyForRating(puzzle.rating)}`;
   const nextStreak = String(session.streak);
   const nextSolved = String(session.solved);
   const favorite = session.favorites.has(puzzle.id);
@@ -1105,6 +1108,10 @@ function updateDock() {
   if (lastTitleText !== nextTitle) {
     title.textContent = nextTitle;
     lastTitleText = nextTitle;
+  }
+  if (lastRatingText !== nextRating) {
+    ratingValue.textContent = nextRating;
+    lastRatingText = nextRating;
   }
   if (lastStreakText !== nextStreak) {
     streakValue.textContent = nextStreak;
@@ -1130,6 +1137,13 @@ function updateDock() {
     lineList.replaceChildren(...(showLine ? state.solution.map((move, index) => createLineItem(move.san, index + 1)) : []));
     lastLineKey = lineKey;
   }
+}
+
+function difficultyForRating(rating) {
+  if (rating < 1000) return "easy";
+  if (rating < 1400) return "medium";
+  if (rating < 1800) return "hard";
+  return "expert";
 }
 
 function createLineItem(san, number) {

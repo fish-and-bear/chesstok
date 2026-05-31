@@ -11,6 +11,7 @@ const errors = [];
 const viewports = [
   { name: "phone-small", width: 320, height: 568, scale: 2, mobile: true },
   { name: "phone", width: 390, height: 844, scale: 2, mobile: true },
+  { name: "phone-wide", width: 549, height: 900, scale: 2, mobile: true },
   { name: "tablet", width: 768, height: 1024, scale: 2, mobile: true },
   { name: "desktop", width: 1280, height: 800, scale: 1, mobile: false }
 ];
@@ -75,6 +76,9 @@ try {
     if (before.boardClipped || jump.boardClipped) errors.push(`${viewport.name}: board is clipped`);
     if (before.railClipped || jump.railClipped) errors.push(`${viewport.name}: action rail is clipped`);
     if (before.railOverlapsBoard || jump.railOverlapsBoard) errors.push(`${viewport.name}: action rail overlaps the board`);
+    if (viewport.width <= 640 && (before.boardCenterOffset > 1 || jump.boardCenterOffset > 1)) {
+      errors.push(`${viewport.name}: board is ${Math.max(before.boardCenterOffset, jump.boardCenterOffset)}px off center`);
+    }
     if (jump.active !== "500") errors.push(`${viewport.name}: jump landed on puzzle ${jump.active}; expected 500`);
 
     results.push({ viewport, before, jump });
@@ -119,6 +123,7 @@ function snapshotExpression() {
       scrollHeight: Math.round(feed.scrollHeight),
       board: board ? { x: Math.round(board.left), y: Math.round(board.top), w: Math.round(board.width), h: Math.round(board.height) } : null,
       rail: rail ? { x: Math.round(rail.left), y: Math.round(rail.top), w: Math.round(rail.width), h: Math.round(rail.height) } : null,
+      boardCenterOffset: board ? Math.round(Math.abs((board.left + board.width / 2) - innerWidth / 2)) : 999,
       boardClipped: clipped(board),
       railClipped: clipped(rail),
       railOverlapsBoard: overlaps(board, rail)
