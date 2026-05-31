@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "23";
+const ASSET_VERSION = "24";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -57,6 +57,10 @@ const title = document.querySelector("#puzzleTitle");
 const ratingValue = document.querySelector("#ratingValue");
 const streakValue = document.querySelector("#streakValue");
 const solvedValue = document.querySelector("#solvedValue");
+const xpStat = document.querySelector("#xpStat");
+const levelValue = document.querySelector("#levelValue");
+const xpValue = document.querySelector("#xpValue");
+const xpFill = document.querySelector("#xpFill");
 const dock = document.querySelector("#dock");
 const lineList = document.querySelector("#lineList");
 const skipButton = document.querySelector("#skipButton");
@@ -121,6 +125,8 @@ let lastTitleText = "";
 let lastRatingText = "";
 let lastStreakText = "";
 let lastSolvedText = "";
+let lastXpKey = "";
+let lastXpTotal = -1;
 let lastLineKey = "";
 let lastAdaptKey = "";
 let lastClockText = "";
@@ -128,6 +134,7 @@ let clockInterval = 0;
 let clockResetTimer = 0;
 let clockLastTick = 0;
 let clockExpired = false;
+let xpBumpTimer = 0;
 
 async function readSavedState() {
   const localSnapshot = readLocalSnapshot();
@@ -1369,6 +1376,7 @@ function updateDock() {
     solvedValue.textContent = nextSolved;
     lastSolvedText = nextSolved;
   }
+  updateXpMeter();
   updateClockDisplay();
   document.body.classList.toggle("rush-mode", isRush());
   saveButton.classList.toggle("active", favorite);
@@ -1392,6 +1400,72 @@ function difficultyForRating(rating) {
   if (rating < 1400) return "medium";
   if (rating < 1800) return "hard";
   return "expert";
+}
+
+function updateXpMeter() {
+  if (!xpStat || !levelValue || !xpValue || !xpFill) return;
+  const progress = xpProgress(session.xp);
+  const levelText = `Lv ${progress.level}`;
+  const xpText = `${formatCompactNumber(progress.current)}/${formatCompactNumber(progress.needed)} XP`;
+  const xpKey = `${levelText}|${xpText}|${Math.round(progress.ratio * 1000)}`;
+
+  if (lastXpKey !== xpKey) {
+    levelValue.textContent = levelText;
+    xpValue.textContent = xpText;
+    xpFill.style.transform = `scaleX(${progress.ratio.toFixed(4)})`;
+    xpStat.setAttribute(
+      "aria-label",
+      `Level ${progress.level}, ${progress.current} of ${progress.needed} XP, ${progress.total} total XP`
+    );
+    lastXpKey = xpKey;
+  }
+
+  if (lastXpTotal >= 0 && progress.total > lastXpTotal) pulseXpMeter();
+  lastXpTotal = progress.total;
+}
+
+function xpProgress(totalXp) {
+  const total = safeInteger(totalXp, 0, 0, 10_000_000);
+  let level = 1;
+  let floor = 0;
+  let needed = levelXpRequirement(level);
+
+  while (level < 999 && total >= floor + needed) {
+    floor += needed;
+    level += 1;
+    needed = levelXpRequirement(level);
+  }
+
+  const current = Math.max(0, total - floor);
+  return {
+    level,
+    current,
+    needed,
+    ratio: needed ? Math.min(1, current / needed) : 1,
+    total
+  };
+}
+
+function levelXpRequirement(level) {
+  return 120 + (level - 1) * 45;
+}
+
+function formatCompactNumber(value) {
+  if (value < 1000) return String(value);
+  if (value < 10000) return `${(value / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  return `${Math.round(value / 1000)}k`;
+}
+
+function pulseXpMeter() {
+  if (!xpStat) return;
+  if (xpBumpTimer) window.clearTimeout(xpBumpTimer);
+  xpStat.classList.remove("gain");
+  void xpStat.offsetWidth;
+  xpStat.classList.add("gain");
+  xpBumpTimer = window.setTimeout(() => {
+    xpStat.classList.remove("gain");
+    xpBumpTimer = 0;
+  }, 520);
 }
 
 function createLineItem(san, number) {
@@ -1833,6 +1907,7 @@ function applyPerfOverrides() {
   session.cleanRun = Math.min(session.streak, perfIntegerParam(params, "clean", session.cleanRun, 0, 1000));
   session.band = perfIntegerParam(params, "band", session.band, MIN_PUZZLE_RATING, MAX_PUZZLE_RATING);
   session.flow = perfIntegerParam(params, "flow", session.flow, 0, 100);
+  session.xp = perfIntegerParam(params, "xp", session.xp, 0, 10_000_000);
   session.clockRemainingMs =
     perfIntegerParam(params, "clock", session.clockRemainingMs / 1000, 0, STREAK_CLOCK_MS / 1000) * 1000;
 }
@@ -1856,6 +1931,8 @@ function registerServiceWorker() {
 function stopStreakClock() {
   if (clockInterval) window.clearInterval(clockInterval);
   if (clockResetTimer) window.clearTimeout(clockResetTimer);
+  if (xpBumpTimer) window.clearTimeout(xpBumpTimer);
   clockInterval = 0;
   clockResetTimer = 0;
+  xpBumpTimer = 0;
 }

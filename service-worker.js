@@ -1,13 +1,13 @@
-const CACHE_NAME = "move-rush-v23";
+const CACHE_NAME = "move-rush-v24";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=23",
-  "./app.js?v=23",
-  "./puzzles.js?v=23",
+  "./styles.css?v=24",
+  "./app.js?v=24",
+  "./puzzles.js?v=24",
   "./vendor/chess.mjs",
   "./manifest.webmanifest",
-  "./pieces.svg?v=23",
+  "./pieces.svg?v=24",
   "./icon.svg",
   "./icon-192.png",
   "./icon-512.png"

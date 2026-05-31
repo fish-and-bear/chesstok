@@ -242,6 +242,59 @@ h1 {
   font-size: 14px;
 }
 
+.stats .xp-stat {
+  display: grid;
+  grid-template-columns: auto minmax(42px, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: min(188px, 50vw);
+  padding: 7px 9px;
+  border-color: rgba(226, 189, 99, 0.22);
+  background: rgba(18, 24, 19, 0.84);
+  text-align: left;
+}
+
+.xp-stat b {
+  color: #f0d88a;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.xp-stat strong {
+  color: #dfe8d5;
+  font-size: 10px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.xp-stat i {
+  display: block;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(245, 241, 232, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(245, 241, 232, 0.05);
+  overflow: hidden;
+}
+
+.xp-stat em {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #e2bd63, #91cf74);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 260ms ease, filter 180ms ease;
+}
+
+.xp-stat.gain {
+  animation: xp-bump 520ms ease-out both;
+}
+
+.xp-stat.gain em {
+  filter: drop-shadow(0 0 8px rgba(226, 189, 99, 0.64));
+}
+
 .feed {
   height: 100vh;
   height: 100dvh;
@@ -876,6 +929,19 @@ body.rush-mode .reel.active .board-wrap {
   }
 }
 
+@keyframes xp-bump {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  38% {
+    border-color: rgba(226, 189, 99, 0.6);
+    transform: translateY(-1px) scale(1.035);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes feedback-pop {
   0% {
     transform: translateX(-50%) scale(0.92);
@@ -978,6 +1044,17 @@ body.rush-mode .reel.active .board-wrap {
     font-size: 10px;
   }
 
+  .stats .xp-stat {
+    grid-template-columns: auto minmax(34px, 1fr) auto;
+    gap: 5px;
+    min-width: min(154px, 50vw);
+    padding: 5px 7px;
+  }
+
+  .xp-stat strong {
+    font-size: 9px;
+  }
+
   .stats span {
     min-width: 56px;
     padding: 6px 7px;
@@ -1069,6 +1146,17 @@ body.rush-mode .reel.active .board-wrap {
   .stats {
     gap: 5px;
     font-size: 10px;
+  }
+
+  .stats .xp-stat {
+    grid-template-columns: auto minmax(28px, 1fr) auto;
+    gap: 5px;
+    min-width: 142px;
+    padding: 5px 7px;
+  }
+
+  .xp-stat strong {
+    font-size: 9px;
   }
 
   .stats span {

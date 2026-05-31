@@ -84,7 +84,7 @@ try {
     })`);
 
     if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
-    if (before.perf.version !== "23" || jump.perf.version !== "23") errors.push(`${viewport.name}: loaded app version is not 23`);
+    if (before.perf.version !== "24" || jump.perf.version !== "24") errors.push(`${viewport.name}: loaded app version is not 24`);
     if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
     if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
     if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);
@@ -93,6 +93,8 @@ try {
     if (before.railClipped || jump.railClipped) errors.push(`${viewport.name}: action rail is clipped`);
     if (before.railOverlapsBoard || jump.railOverlapsBoard) errors.push(`${viewport.name}: action rail overlaps the board`);
     if (!before.clockText || !jump.clockText) errors.push(`${viewport.name}: streak clock text is missing`);
+    if (!before.xpText || !jump.xpText) errors.push(`${viewport.name}: XP meter text is missing`);
+    if (before.xpClipped || jump.xpClipped) errors.push(`${viewport.name}: XP meter is clipped`);
     if (viewport.width <= 640 && (before.boardCenterOffset > 1 || jump.boardCenterOffset > 1)) {
       errors.push(`${viewport.name}: board is ${Math.max(before.boardCenterOffset, jump.boardCenterOffset)}px off center`);
     }
@@ -139,6 +141,7 @@ function snapshotExpression() {
     const feed = document.querySelector("#feed");
     const board = document.querySelector(".reel.active .board-wrap")?.getBoundingClientRect();
     const rail = document.querySelector(".rail")?.getBoundingClientRect();
+    const xp = document.querySelector("#xpStat")?.getBoundingClientRect();
     const root = document.documentElement.dataset;
     const clipped = (rect) => rect ? rect.left < -1 || rect.right > innerWidth + 1 || rect.top < -1 || rect.bottom > innerHeight + 1 : true;
     const overlaps = (a, b) => a && b && a.left < b.right - 3 && a.right > b.left + 3 && a.top < b.bottom - 3 && a.bottom > b.top + 3;
@@ -159,11 +162,14 @@ function snapshotExpression() {
       scrollTop: Math.round(feed.scrollTop),
       scrollHeight: Math.round(feed.scrollHeight),
       clockText: document.querySelector("#clockValue")?.textContent || "",
+      xpText: document.querySelector("#xpValue")?.textContent || "",
       board: board ? { x: Math.round(board.left), y: Math.round(board.top), w: Math.round(board.width), h: Math.round(board.height) } : null,
       rail: rail ? { x: Math.round(rail.left), y: Math.round(rail.top), w: Math.round(rail.width), h: Math.round(rail.height) } : null,
+      xp: xp ? { x: Math.round(xp.left), y: Math.round(xp.top), w: Math.round(xp.width), h: Math.round(xp.height) } : null,
       boardCenterOffset: board ? Math.round(Math.abs((board.left + board.width / 2) - innerWidth / 2)) : 999,
       boardClipped: clipped(board),
       railClipped: clipped(rail),
+      xpClipped: clipped(xp),
       railOverlapsBoard: overlaps(board, rail)
     };
   })()`;
