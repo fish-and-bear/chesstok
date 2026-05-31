@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "45";
+const ASSET_VERSION = "46";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -136,7 +136,6 @@ let lastLineKey = "";
 let lastAdaptKey = "";
 let lastClockText = "";
 let clockInterval = 0;
-let clockResetTimer = 0;
 let clockLastTick = 0;
 let clockExpired = false;
 let xpBumpTimer = 0;
@@ -616,8 +615,6 @@ function syncStreakClock({ allowExpire = true } = {}) {
 }
 
 function resetStreakClock() {
-  if (clockResetTimer) window.clearTimeout(clockResetTimer);
-  clockResetTimer = 0;
   clockExpired = false;
   session.clockRemainingMs = STREAK_CLOCK_MS;
   clockLastTick = performance.now();
@@ -642,10 +639,6 @@ function expireStreakClock() {
     tick("wrong");
   }
   saveState();
-  clockResetTimer = window.setTimeout(() => {
-    resetStreakClock();
-    saveState();
-  }, 650);
 }
 
 function updateClockDisplay() {
@@ -1252,7 +1245,6 @@ function miss(state, text, squares = []) {
   session.streak = 0;
   session.cleanRun = 0;
   session.flow = Math.max(0, session.flow - 24);
-  resetStreakClock();
   adaptUpcomingPuzzles();
   state.panel.classList.remove("shake");
   void state.panel.offsetWidth;
@@ -1284,7 +1276,6 @@ function solve(state) {
     session.streak = 0;
     session.cleanRun = 0;
     session.flow = Math.max(0, session.flow - 8);
-    resetStreakClock();
     adaptUpcomingPuzzles();
     markFeedback(state, "Practice");
     updateDock();
@@ -1295,7 +1286,6 @@ function solve(state) {
 
   if (alreadyCounted) {
     session.flow = Math.min(100, session.flow + 10);
-    resetStreakClock();
     adaptUpcomingPuzzles();
     markFeedback(state, "Solved");
     updateDock();
@@ -1648,7 +1638,6 @@ function revealActive() {
   if (!state.revealed && !state.solved) {
     session.streak = 0;
     session.cleanRun = 0;
-    resetStreakClock();
   }
   state.revealed = true;
   state.selected = null;
@@ -2046,9 +2035,7 @@ function registerServiceWorker() {
 
 function stopStreakClock() {
   if (clockInterval) window.clearInterval(clockInterval);
-  if (clockResetTimer) window.clearTimeout(clockResetTimer);
   if (xpBumpTimer) window.clearTimeout(xpBumpTimer);
   clockInterval = 0;
-  clockResetTimer = 0;
   xpBumpTimer = 0;
 }

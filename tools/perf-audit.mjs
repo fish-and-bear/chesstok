@@ -85,7 +85,7 @@ try {
     })`);
 
     if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
-    if (before.perf.version !== "45" || jump.perf.version !== "45") errors.push(`${viewport.name}: loaded app version is not 45`);
+    if (before.perf.version !== "46" || jump.perf.version !== "46") errors.push(`${viewport.name}: loaded app version is not 46`);
     if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
     if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
     if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);
@@ -123,7 +123,8 @@ try {
     errors.push(`adaptive feed average only increased from ${adaptiveLow.upcomingAverage} to ${adaptiveHigh.upcomingAverage}`);
   }
   if (clockExpiry.streak !== "0") errors.push(`clock expiry left streak at ${clockExpiry.streak}`);
-  if (clockExpiry.clockSeconds < 58) errors.push(`clock did not restart after expiry: ${clockExpiry.clockText}`);
+  if (!clockExpiry.expired) errors.push("clock expiry state is not visible");
+  if (clockExpiry.clockSeconds !== 0) errors.push(`clock restarted without a solve: ${clockExpiry.clockText}`);
   if (reviewLine.activePly !== "1") errors.push(`solution review did not activate ply 1; got ${reviewLine.activePly || "none"}`);
   if (!reviewLine.lineVisible) errors.push("solution review line is not visible after reveal");
 
@@ -237,7 +238,8 @@ async function clockExpirySnapshot(cdp, appPort) {
       return {
         streak: document.querySelector("#streakValue")?.textContent || "",
         clockText,
-        clockSeconds: Number(clockText.replace(/\\D/g, "")) || 0
+        clockSeconds: Number(clockText.replace(/\\D/g, "")) || 0,
+        expired: document.body.classList.contains("clock-expired")
       };
     })()`
   );
