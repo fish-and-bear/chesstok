@@ -46,8 +46,7 @@ function checkRequiredFiles() {
     "icon.svg",
     "icon-192.png",
     "icon-512.png",
-    "social-card-v1.png",
-    "social-card-v1.svg",
+    "social-card-v2.png",
     "pieces.svg",
     "puzzles.js",
     "vendor/chess.mjs",
@@ -148,11 +147,11 @@ function checkIndex() {
     '<link rel="canonical" href="https://angelicanaguio.com/chesstok/">',
     'property="og:title"',
     'property="og:description"',
-    'property="og:image" content="https://angelicanaguio.com/chesstok/social-card-v1.png"',
+    'property="og:image" content="https://angelicanaguio.com/chesstok/social-card-v2.png"',
     'property="og:image:width" content="1200"',
     'property="og:image:height" content="630"',
     'name="twitter:card" content="summary_large_image"',
-    'name="twitter:image" content="https://angelicanaguio.com/chesstok/social-card-v1.png"',
+    'name="twitter:image" content="https://angelicanaguio.com/chesstok/social-card-v2.png"',
     '<link rel="apple-touch-icon" href="./icon-192.png">'
   ]) {
     if (!index.includes(token)) fail(`index.html is missing social/SEO token: ${token}`);
@@ -171,11 +170,11 @@ function checkIndex() {
 
 function checkSocialAssets() {
   const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
-  for (const file of ["icon-192.png", "icon-512.png", "social-card-v1.png"]) {
+  for (const file of ["icon-192.png", "icon-512.png", "social-card-v2.png"]) {
     const buffer = fs.readFileSync(resolve(file));
     if (!buffer.subarray(0, 4).equals(pngSignature)) fail(`${file} is not a PNG`);
   }
-  if (fs.statSync(resolve("social-card-v1.png")).size > 500_000) fail("social-card-v1.png should stay under 500KB");
+  if (fs.statSync(resolve("social-card-v2.png")).size > 500_000) fail("social-card-v2.png should stay under 500KB");
   if (!read("manifest.webmanifest").includes("icon-192.png")) fail("manifest should include icon-192.png");
   if (!read("manifest.webmanifest").includes("icon-512.png")) fail("manifest should include icon-512.png");
 }

@@ -5,6 +5,6 @@
   <path d="M96 256h160v160H96z" fill="#6d8d65"/>
   <path d="M256 256h160v160H256z" fill="#eadfbe"/>
   <path d="M260 132c40 0 72 32 72 72 0 24-12 46-30 59l50 113H160l50-113a72 72 0 0 1 50-131z" fill="#101512"/>
-  <path d="M178 370h164l-18 34H196z" fill="#e2bd63"/>
-  <path d="M196 386h128" stroke="#f0d17a" stroke-width="8" stroke-linecap="round" opacity="0.68"/>
+  <path d="M174 362h172l-18 42H192z" fill="#101512"/>
+  <path d="M194 378h132" stroke="#203027" stroke-width="10" stroke-linecap="round" opacity="0.9"/>
 </svg>

@@ -17,8 +17,7 @@ for (const item of [
   "icon.svg",
   "icon-192.png",
   "icon-512.png",
-  "social-card-v1.png",
-  "social-card-v1.svg",
+  "social-card-v2.png",
   "pieces.svg",
   "puzzles.js",
   "_headers"
