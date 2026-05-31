@@ -85,7 +85,7 @@ try {
     })`);
 
     if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
-    if (before.perf.version !== "51" || jump.perf.version !== "51") errors.push(`${viewport.name}: loaded app version is not 51`);
+    if (before.perf.version !== "53" || jump.perf.version !== "53") errors.push(`${viewport.name}: loaded app version is not 53`);
     if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
     if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
     if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);
@@ -135,10 +135,10 @@ try {
   if (saveControl.icon !== "\u2605") errors.push(`save icon did not fill: ${saveControl.icon || "empty"}`);
   if (!saveControl.persisted) errors.push("save did not persist to local storage");
   if (!saveControl.restored) errors.push("saved puzzle state did not restore after reload");
-  if (savedFeed.mode !== "saved") errors.push(`saved feed did not activate: ${savedFeed.mode || "none"}`);
-  if (savedFeed.activeId !== savedFeed.savedId) errors.push("saved feed did not open on the saved puzzle");
-  if (savedFeed.countText !== "1") errors.push(`saved feed count did not show 1: ${savedFeed.countText || "empty"}`);
-  if (savedFeed.backMode !== "all") errors.push(`saved feed did not return to all puzzles: ${savedFeed.backMode || "none"}`);
+  if (savedFeed.mode !== "saved") errors.push(`saved library did not activate: ${savedFeed.mode || "none"}`);
+  if (savedFeed.activeId !== savedFeed.savedId) errors.push("saved library did not open on the saved puzzle");
+  if (savedFeed.countText !== "1") errors.push(`saved library count did not show 1: ${savedFeed.countText || "empty"}`);
+  if (savedFeed.backMode !== "all") errors.push(`saved library did not return to all puzzles: ${savedFeed.backMode || "none"}`);
   if (wheelSnap.active !== "1") errors.push(`wheel gesture moved ${wheelSnap.active || "nowhere"} panels; expected 1`);
 
   console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry, reviewLine, saveControl, savedFeed, wheelSnap }, null, 2));

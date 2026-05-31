@@ -34,10 +34,10 @@
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" href="./icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./icon-192.png">
-    <link rel="preload" href="./pieces.svg?v=51" as="image" type="image/svg+xml">
+    <link rel="preload" href="./pieces.svg?v=53" as="image" type="image/svg+xml">
     <link rel="modulepreload" href="./vendor/chess.mjs">
-    <link rel="modulepreload" href="./puzzles.js?v=51">
-    <link rel="stylesheet" href="./styles.css?v=51">
+    <link rel="modulepreload" href="./puzzles.js?v=53">
+    <link rel="stylesheet" href="./styles.css?v=53">
   </head>
   <body>
     <main class="app-shell">
@@ -53,7 +53,7 @@
             <p id="ratingValue" class="rating-chip">1200 · medium</p>
             <button id="savedFilterButton" class="saved-filter empty" type="button" aria-pressed="false" aria-label="No saved puzzles yet">
               <b id="savedFilterCount">0</b>
-              <span>saved</span>
+              <span id="savedFilterLabel">saved</span>
             </button>
           </div>
         </div>
@@ -101,6 +101,6 @@
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
     </main>
 
-    <script type="module" src="./app.js?v=51"></script>
+    <script type="module" src="./app.js?v=53"></script>
   </body>
 </html>
