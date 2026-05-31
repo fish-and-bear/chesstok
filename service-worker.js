@@ -1,13 +1,13 @@
-const CACHE_NAME = "move-rush-v20";
+const CACHE_NAME = "move-rush-v21";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=20",
-  "./app.js?v=20",
-  "./puzzles.js?v=20",
+  "./styles.css?v=21",
+  "./app.js?v=21",
+  "./puzzles.js?v=21",
   "./vendor/chess.mjs",
   "./manifest.webmanifest",
-  "./pieces.svg?v=20",
+  "./pieces.svg?v=21",
   "./icon.svg"
 ];
 const ASSET_URLS = new Set(ASSETS.map((asset) => new URL(asset, self.location).href));
@@ -18,10 +18,12 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
-      .then(() => self.clients.claim())
+    Promise.all([
+      enableNavigationPreload(),
+      caches
+        .keys()
+        .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+    ]).then(() => self.clients.claim())
   );
 });
 
@@ -32,7 +34,7 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== location.origin) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).catch(() => caches.match("./index.html")));
+    event.respondWith(navigationResponse(event));
     return;
   }
 
@@ -41,14 +43,41 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-        return response;
-      });
-    })
-  );
+  event.respondWith(assetResponse(event));
 });
+
+async function enableNavigationPreload() {
+  try {
+    await self.registration.navigationPreload?.enable?.();
+  } catch {}
+}
+
+async function navigationResponse(event) {
+  try {
+    return (await event.preloadResponse) || (await fetch(event.request));
+  } catch {
+    return (await caches.match("./index.html")) || offlineResponse();
+  }
+}
+
+async function assetResponse(event) {
+  const cached = await caches.match(event.request);
+  if (cached) return cached;
+
+  try {
+    const response = await fetch(event.request);
+    if (response.ok && response.type === "basic") {
+      event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone())));
+    }
+    return response;
+  } catch {
+    return offlineResponse();
+  }
+}
+
+function offlineResponse() {
+  return new Response("Offline", {
+    status: 503,
+    headers: { "Content-Type": "text/plain; charset=utf-8" }
+  });
+}

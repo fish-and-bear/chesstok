@@ -21,6 +21,7 @@ checkJson("wrangler.jsonc");
 await checkPuzzleShard();
 checkIndex();
 checkServiceWorker();
+checkSecurityHeaders();
 checkSourceHygiene();
 checkDocs();
 
@@ -146,6 +147,10 @@ function checkServiceWorker() {
   if (!sw.includes(`app.js?v=${appVersion}`)) fail("service worker cache does not match app.js version");
   if (!sw.includes(`styles.css?v=${cssVersion}`)) fail("service worker cache does not match styles.css version");
   if (!sw.includes("ASSET_URLS")) fail("service worker should only cache known assets");
+  if (!sw.includes("navigationPreload")) fail("service worker should enable navigation preload");
+  if (!sw.includes("response.ok") || !sw.includes('response.type === "basic"')) {
+    fail("service worker should only store successful same-origin asset responses");
+  }
 
   const worker = read("worker.js");
   if (!worker.includes('const PREFIX = "/chesstok"')) fail("worker.js should serve the app from /chesstok");
@@ -155,6 +160,31 @@ function checkServiceWorker() {
   for (const asset of assetMatches.filter((item) => item.startsWith("./"))) {
     const clean = asset.replace(/^\.\//, "").replace(/\?.*$/, "") || "index.html";
     if (clean !== "." && !fs.existsSync(resolve(clean))) fail(`service-worker.js references missing asset ${asset}`);
+  }
+}
+
+function checkSecurityHeaders() {
+  const headers = read("_headers");
+  const worker = read("worker.js");
+  const vercel = read("vercel.json");
+  const required = [
+    "Content-Security-Policy",
+    "Referrer-Policy",
+    "X-Content-Type-Options",
+    "X-Frame-Options",
+    "X-Permitted-Cross-Domain-Policies",
+    "X-DNS-Prefetch-Control",
+    "Cross-Origin-Opener-Policy",
+    "Cross-Origin-Resource-Policy",
+    "Origin-Agent-Cluster",
+    "Strict-Transport-Security",
+    "Permissions-Policy"
+  ];
+
+  for (const header of required) {
+    if (!headers.includes(header)) fail(`_headers is missing ${header}`);
+    if (!worker.includes(header)) fail(`worker.js is missing ${header}`);
+    if (!vercel.includes(header)) fail(`vercel.json is missing ${header}`);
   }
 }
 
@@ -187,9 +217,13 @@ function checkSourceHygiene() {
     "move-rush-v18",
     "?v=18",
     "move-rush-v19",
-    "?v=19"
+    "?v=19",
+    "move-rush-v20",
+    "?v=20"
   ]) {
-    if (`${app}\n${index}\n${styles}\n${read("service-worker.js")}`.includes(stale)) fail(`Found stale UI/build token ${stale}`);
+    if (`${app}\n${index}\n${styles}\n${read("service-worker.js")}\n${read("_headers")}`.includes(stale)) {
+      fail(`Found stale UI/build token ${stale}`);
+    }
   }
 
   if (!read("vendor/chess.mjs").includes("Copyright (c) 2025, Jeff Hlywa")) fail("vendor/chess.mjs license notice is missing");

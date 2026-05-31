@@ -23,9 +23,9 @@ npm run build
 The release check validates syntax, JSON, PWA assets, security headers, puzzle
 shard shape, cache versions, and obvious stale UI tokens.
 
-The performance audit opens the app in mobile Chrome, checks the puzzle payload
-budget, jumps 500 reels deep, and fails if the feed mounts too many boards or
-DOM nodes.
+The performance audit opens the app in mobile Chrome, checks script and puzzle
+payload budgets, jumps 500 reels deep, and fails if the feed mounts too many
+boards or DOM nodes.
 
 ## Deploy
 
@@ -84,9 +84,10 @@ includes XP, streak data, favorite puzzle IDs, unique solved puzzle IDs, and the
 last reel position.
 
 The local app is hardened for casual tampering, but browser-only stats are not
-authoritative. Saved puzzle IDs are validated against the bundled shard, visible
-numbers are clamped to plausible values, revealed answers are practice-only, and
-the page ships with a restrictive CSP. A real public leaderboard needs
+authoritative. Saved puzzle IDs are validated against the bundled shard, malformed
+puzzle rows are ignored before they reach the board, visible numbers are clamped
+to plausible values, revealed answers are practice-only, and the page ships with
+a restrictive CSP plus isolation headers. A real public leaderboard needs
 server-side scoring because client-side code can always be changed by the person
 running it.
 

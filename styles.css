@@ -235,6 +235,49 @@ h1 {
   width: 0;
 }
 
+.boot-fail {
+  position: fixed;
+  z-index: 9;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: min(360px, calc(100vw - 40px));
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid rgba(245, 241, 232, 0.16);
+  border-radius: 8px;
+  background: rgba(16, 21, 18, 0.94);
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+.boot-fail h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.boot-fail p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.boot-fail button {
+  justify-self: center;
+  min-width: 104px;
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid rgba(245, 241, 232, 0.2);
+  border-radius: 7px;
+  background: var(--ink);
+  color: #111814;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .feed-stage {
   position: relative;
   min-height: 100%;

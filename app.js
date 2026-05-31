@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "20";
+const ASSET_VERSION = "21";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -17,6 +17,7 @@ let PUZZLES = [];
 let RATING_SORTED_PUZZLES = [];
 let MIN_PUZZLE_RATING = 300;
 let MAX_PUZZLE_RATING = 3200;
+let MAX_PUZZLE_POPULARITY = 100;
 
 const PERF_MODE = new URLSearchParams(window.location.search).has("perf");
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
@@ -642,6 +643,11 @@ function adaptUpcomingPuzzles(force = false) {
 
 function findAdaptiveCandidate(target, minIndex, reserved) {
   const center = lowerBoundPuzzleRating(target);
+  let lower = center - 1;
+  let upper = center;
+  let bestPuzzle = null;
+  let bestScore = Infinity;
+
   const canUse = (puzzle) => {
     if (!puzzle || reserved.has(puzzle.id)) return false;
     const index = session.puzzleIndexById.get(puzzle.id);
@@ -649,15 +655,30 @@ function findAdaptiveCandidate(target, minIndex, reserved) {
     return session.solvedIds.size >= PUZZLE_IDS.size || !session.solvedIds.has(puzzle.id);
   };
 
-  for (let offset = 0; offset < RATING_SORTED_PUZZLES.length; offset += 1) {
-    const upper = RATING_SORTED_PUZZLES[center + offset];
-    if (canUse(upper)) return upper;
+  const inspect = (puzzle) => {
+    if (!canUse(puzzle)) return;
+    const score = adaptivePuzzleScore(puzzle, target);
+    if (score < bestScore) {
+      bestScore = score;
+      bestPuzzle = puzzle;
+    }
+  };
 
-    const lower = RATING_SORTED_PUZZLES[center - offset - 1];
-    if (canUse(lower)) return lower;
+  while (lower >= 0 || upper < RATING_SORTED_PUZZLES.length) {
+    if (upper < RATING_SORTED_PUZZLES.length) inspect(RATING_SORTED_PUZZLES[upper++]);
+    if (lower >= 0) inspect(RATING_SORTED_PUZZLES[lower--]);
+
+    if (!bestPuzzle) continue;
+
+    const nextUpperDistance =
+      upper < RATING_SORTED_PUZZLES.length ? Math.abs(RATING_SORTED_PUZZLES[upper].rating - target) : Infinity;
+    const nextLowerDistance =
+      lower >= 0 ? Math.abs(RATING_SORTED_PUZZLES[lower].rating - target) : Infinity;
+    const bestPossibleNextScore = Math.min(nextUpperDistance, nextLowerDistance) * 10 - MAX_PUZZLE_POPULARITY;
+    if (bestPossibleNextScore > bestScore) break;
   }
 
-  return null;
+  return bestPuzzle;
 }
 
 function lowerBoundPuzzleRating(rating) {
@@ -1480,6 +1501,40 @@ function resetActive() {
   updateDock();
 }
 
+function showFatalError(error) {
+  console.error(error);
+  stopStreakClock();
+  document.documentElement.dataset.moveRush = "error";
+  document.body.classList.remove("clock-low", "clock-expired", "rush-mode", "is-snapping");
+  feed.replaceChildren(createFatalErrorPanel());
+  title.textContent = "Could not load";
+  ratingValue.textContent = "check connection";
+  streakValue.textContent = String(session.streak);
+  solvedValue.textContent = String(session.solved);
+  lineList.replaceChildren();
+  dock.classList.remove("has-line");
+  flowFill.style.transform = "scaleX(0)";
+  clockValue.textContent = "";
+}
+
+function createFatalErrorPanel() {
+  const panel = document.createElement("section");
+  const heading = document.createElement("h2");
+  const text = document.createElement("p");
+  const button = document.createElement("button");
+
+  panel.className = "boot-fail";
+  panel.setAttribute("role", "alert");
+  heading.textContent = "Puzzles did not load";
+  text.textContent = "Reload once. If you are offline, reopen after the app finishes caching.";
+  button.type = "button";
+  button.textContent = "Reload";
+  button.addEventListener("click", () => window.location.reload());
+
+  panel.append(heading, text, button);
+  return panel;
+}
+
 function skipActive() {
   const state = ensureState(session.active);
   if (!state) return;
@@ -1657,64 +1712,92 @@ function bindActions() {
 boot();
 
 async function boot() {
-  await loadPuzzles();
+  try {
+    await loadPuzzles();
 
-  if (!PERF_MODE) {
-    try {
-      applySavedState(await readSavedState());
-    } catch {}
-  } else {
-    applyPerfOverrides();
+    if (!PERF_MODE) {
+      try {
+        applySavedState(await readSavedState());
+      } catch {}
+    } else {
+      applyPerfOverrides();
+    }
+
+    buildFeed();
+    watchPanels();
+    bindSwipeNavigation();
+    bindActions();
+    startStreakClock();
+    updateDock();
+    if (!PERF_MODE) setupPersistence();
+    registerServiceWorker();
+    document.documentElement.dataset.moveRush = "ready";
+    publishPerfSnapshot();
+  } catch (error) {
+    showFatalError(error);
   }
-
-  buildFeed();
-  watchPanels();
-  bindSwipeNavigation();
-  bindActions();
-  startStreakClock();
-  updateDock();
-  if (!PERF_MODE) setupPersistence();
-  registerServiceWorker();
-  document.documentElement.dataset.moveRush = "ready";
-  publishPerfSnapshot();
 }
 
 async function loadPuzzles() {
   const module = await import(PUZZLE_MODULE);
-  PUZZLES = Array.isArray(module.PUZZLES) ? module.PUZZLES.map(normalizePuzzle).filter(Boolean) : [];
+  if (!Array.isArray(module.PUZZLES)) throw new Error("Puzzle module did not export PUZZLES");
+
+  const ids = new Set();
+  PUZZLES = [];
   PUZZLE_IDS.clear();
-  for (const puzzle of PUZZLES) {
-    if (typeof puzzle.id === "string") PUZZLE_IDS.add(puzzle.id);
+
+  for (const row of module.PUZZLES) {
+    const puzzle = normalizePuzzle(row);
+    if (!puzzle || ids.has(puzzle.id)) continue;
+    ids.add(puzzle.id);
+    PUZZLES.push(puzzle);
+    PUZZLE_IDS.add(puzzle.id);
   }
+
+  if (!PUZZLES.length) throw new Error("Puzzle shard is empty");
+
   RATING_SORTED_PUZZLES = [...PUZZLES].sort((a, b) => a.rating - b.rating || b.popularity - a.popularity);
   MIN_PUZZLE_RATING = RATING_SORTED_PUZZLES[0]?.rating || MIN_PUZZLE_RATING;
   MAX_PUZZLE_RATING = RATING_SORTED_PUZZLES[RATING_SORTED_PUZZLES.length - 1]?.rating || MAX_PUZZLE_RATING;
+  MAX_PUZZLE_POPULARITY = Math.max(1, ...PUZZLES.map((puzzle) => puzzle.popularity));
 }
 
 function normalizePuzzle(puzzle) {
   if (Array.isArray(puzzle)) {
-    return {
+    return normalizePuzzleFields({
       id: puzzle[0],
       fen: puzzle[1],
       moves: puzzle[2],
       rating: puzzle[3],
       popularity: puzzle[4]
-    };
+    });
   }
 
   if (!puzzle || typeof puzzle !== "object") return null;
-  return {
+  return normalizePuzzleFields({
     id: puzzle.id,
     fen: puzzle.fen,
     moves: puzzle.moves,
     rating: puzzle.rating,
     popularity: puzzle.popularity
-  };
+  });
+}
+
+function normalizePuzzleFields(puzzle) {
+  const id = typeof puzzle.id === "string" ? puzzle.id : "";
+  const fen = typeof puzzle.fen === "string" ? puzzle.fen : "";
+  const moves = typeof puzzle.moves === "string" ? puzzle.moves.trim() : "";
+  const rating = safeInteger(puzzle.rating, 0, MIN_PUZZLE_RATING, MAX_PUZZLE_RATING);
+  const popularity = safeInteger(puzzle.popularity, 0, 0, 10_000);
+
+  if (!id || !fen || moves.split(/\s+/).length < 2 || rating <= 0) return null;
+  return { id, fen, moves, rating, popularity };
 }
 
 function publishPerfSnapshot() {
   const upcomingRatings = session.puzzles.slice(session.active + 1, session.active + 13).map((puzzle) => puzzle.rating);
   const snapshot = Object.freeze({
+    version: ASSET_VERSION,
     readyMs: Math.round(performance.now() - bootStartedAt),
     puzzles: session.puzzles.length,
     mountedBoards: session.mounted.size,
@@ -1766,4 +1849,11 @@ function registerServiceWorker() {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("./service-worker.js").catch(() => {});
   });
+}
+
+function stopStreakClock() {
+  if (clockInterval) window.clearInterval(clockInterval);
+  if (clockResetTimer) window.clearTimeout(clockResetTimer);
+  clockInterval = 0;
+  clockResetTimer = 0;
 }

@@ -6,11 +6,15 @@ payments, analytics, or personal data.
 What is hardened:
 
 - The page ships with a restrictive Content Security Policy and Trusted Types.
+- Hosts are configured with frame, referrer, MIME, permission, origin isolation,
+  and HSTS headers.
 - Rendering avoids HTML string injection.
+- Puzzle rows are validated before entering the feed.
 - Saved progress is normalized before display.
 - Solved counts are based on known puzzle IDs from the bundled shard.
 - Answer-assisted solves are practice-only and do not add solved credit.
-- The service worker caches only known app assets.
+- The service worker caches only known app assets and only stores successful
+  same-origin responses.
 
 What is not guaranteed:
 

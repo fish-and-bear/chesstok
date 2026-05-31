@@ -33,6 +33,21 @@ const chrome = spawn(chromePath, [
 try {
   const puzzleBytes = fs.statSync(path.join(root, "puzzles.js")).size;
   if (puzzleBytes > 1_200_000) errors.push(`puzzles.js is ${puzzleBytes} bytes; budget is 1200000`);
+  const assetBytes = {
+    app: fs.statSync(path.join(root, "app.js")).size,
+    css: fs.statSync(path.join(root, "styles.css")).size,
+    worker: fs.statSync(path.join(root, "service-worker.js")).size,
+    pieces: fs.statSync(path.join(root, "pieces.svg")).size
+  };
+  const assetBudgets = {
+    app: 70_000,
+    css: 32_000,
+    worker: 5_000,
+    pieces: 32_000
+  };
+  for (const [asset, bytes] of Object.entries(assetBytes)) {
+    if (bytes > assetBudgets[asset]) errors.push(`${asset} asset is ${bytes} bytes; budget is ${assetBudgets[asset]}`);
+  }
 
   const version = await waitForJson(`http://127.0.0.1:${debugPort}/json/version`);
   const pageInfo = await fetch(`http://127.0.0.1:${debugPort}/json/new?about:blank`, { method: "PUT" }).then((response) => response.json());
@@ -69,6 +84,7 @@ try {
     })`);
 
     if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
+    if (before.perf.version !== "21" || jump.perf.version !== "21") errors.push(`${viewport.name}: loaded app version is not 21`);
     if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
     if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
     if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);
@@ -104,7 +120,7 @@ try {
   if (clockExpiry.streak !== "0") errors.push(`clock expiry left streak at ${clockExpiry.streak}`);
   if (clockExpiry.clockSeconds < 88) errors.push(`clock did not restart after expiry: ${clockExpiry.clockText}`);
 
-  console.log(JSON.stringify({ puzzleBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry }, null, 2));
+  console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry }, null, 2));
   await cdp.close();
 } finally {
   chrome.kill("SIGTERM");
@@ -130,6 +146,7 @@ function snapshotExpression() {
       ready: document.documentElement.dataset.moveRush,
       active: document.querySelector(".reel.active")?.dataset.index || "",
       perf: window.__chesstokPerf || {
+        version: "",
         readyMs: Number(root.readyMs || 0),
         puzzles: Number(root.puzzles || 0),
         mountedBoards: Number(root.mountedBoards || 0),
