@@ -1,9 +1,9 @@
-const CACHE_NAME = "move-rush-v9";
+const CACHE_NAME = "move-rush-v10";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=9",
-  "./app.js?v=9",
+  "./styles.css?v=10",
+  "./app.js?v=10",
   "./puzzles.js",
   "./vendor/chess.mjs",
   "./manifest.webmanifest",

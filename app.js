@@ -1,19 +1,54 @@
 import { Chess } from "./vendor/chess.mjs";
 import { PUZZLES } from "./puzzles.js";
 
-const PIECES = {
-  wp: 0x2659,
-  wn: 0x2658,
-  wb: 0x2657,
-  wr: 0x2656,
-  wq: 0x2655,
-  wk: 0x2654,
-  bp: 0x265f,
-  bn: 0x265e,
-  bb: 0x265d,
-  br: 0x265c,
-  bq: 0x265b,
-  bk: 0x265a
+const SVG_NS = "http://www.w3.org/2000/svg";
+const PIECE_NAMES = {
+  p: "pawn",
+  n: "knight",
+  b: "bishop",
+  r: "rook",
+  q: "queen",
+  k: "king"
+};
+const PIECE_SHAPES = {
+  p: [
+    ["circle", { class: "piece-shape", cx: "50", cy: "28", r: "13" }],
+    ["path", { class: "piece-shape", d: "M38 42h24l8 33H30z" }],
+    ["path", { class: "piece-shape", d: "M27 76h46v11H27z" }]
+  ],
+  n: [
+    ["path", { class: "piece-shape", d: "M30 78h43v10H30z" }],
+    [
+      "path",
+      {
+        class: "piece-shape",
+        d: "M36 77c2-18 8-30 21-39l-10-9 8-13 23 19-7 9 4 15-18 5-7-9c-6 7-9 14-10 22z"
+      }
+    ],
+    ["circle", { class: "piece-detail", cx: "61", cy: "36", r: "3.5" }]
+  ],
+  b: [
+    ["path", { class: "piece-shape", d: "M50 16c14 10 20 22 20 36 0 14-8 24-20 24S30 66 30 52c0-14 6-26 20-36z" }],
+    ["path", { class: "piece-line", d: "M58 29 42 61" }],
+    ["path", { class: "piece-shape", d: "M29 77h42v10H29z" }]
+  ],
+  r: [
+    ["path", { class: "piece-shape", d: "M28 23h9v10h8V23h10v10h8V23h9v24H28z" }],
+    ["path", { class: "piece-shape", d: "M34 47h32v29H34z" }],
+    ["path", { class: "piece-shape", d: "M27 77h46v10H27z" }]
+  ],
+  q: [
+    ["path", { class: "piece-shape", d: "M26 77h48v10H26z" }],
+    ["path", { class: "piece-shape", d: "M31 70 25 31l15 18 10-25 10 25 15-18-6 39z" }],
+    ["circle", { class: "piece-shape", cx: "25", cy: "29", r: "5" }],
+    ["circle", { class: "piece-shape", cx: "50", cy: "23", r: "5" }],
+    ["circle", { class: "piece-shape", cx: "75", cy: "29", r: "5" }]
+  ],
+  k: [
+    ["path", { class: "piece-line heavy", d: "M50 13v23M40 24h20" }],
+    ["path", { class: "piece-shape", d: "M32 73c3-22 11-34 18-38 7 4 15 16 18 38z" }],
+    ["path", { class: "piece-shape", d: "M27 77h46v10H27z" }]
+  ]
 };
 
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
@@ -514,7 +549,6 @@ function renderBoard(state) {
     ...squares.map((square) => {
       const piece = state.game.get(square);
       const isLight = (FILES.indexOf(square[0]) + Number(square[1])) % 2 === 1;
-      const pieceKey = piece ? `${piece.color}${piece.type}` : "";
       const target = targets.get(square);
       const button = document.createElement("button");
       button.className = "square";
@@ -527,11 +561,24 @@ function renderBoard(state) {
       button.type = "button";
       button.setAttribute("role", "gridcell");
       button.dataset.square = square;
-      button.setAttribute("aria-label", piece ? `${piece.color === "w" ? "White" : "Black"} ${piece.type} on ${square}` : square);
+      button.setAttribute(
+        "aria-label",
+        piece ? `${piece.color === "w" ? "White" : "Black"} ${PIECE_NAMES[piece.type]} on ${square}` : square
+      );
 
-      const pieceLabel = document.createElement("span");
-      pieceLabel.className = "piece";
-      pieceLabel.textContent = piece ? String.fromCodePoint(PIECES[pieceKey]) : "";
+      if (target) {
+        const marker = document.createElement("span");
+        marker.className = target.captured ? "move-target capture-target" : "move-target dot-target";
+        marker.setAttribute("aria-hidden", "true");
+        button.append(marker);
+      }
+
+      if (piece) {
+        const pieceLabel = document.createElement("span");
+        pieceLabel.className = "piece";
+        pieceLabel.append(createPieceSvg(piece));
+        button.append(pieceLabel);
+      }
 
       const fileCoord = document.createElement("span");
       fileCoord.className = "coord file";
@@ -541,10 +588,28 @@ function renderBoard(state) {
       rankCoord.className = "coord rank";
       rankCoord.textContent = square[0] === leftFile ? square[1] : "";
 
-      button.append(pieceLabel, fileCoord, rankCoord);
+      button.append(fileCoord, rankCoord);
       return button;
     })
   );
+}
+
+function createPieceSvg(piece) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.classList.add("piece-svg", piece.color === "w" ? "white-piece" : "black-piece");
+  svg.setAttribute("viewBox", "0 0 100 100");
+  svg.setAttribute("focusable", "false");
+  svg.setAttribute("aria-hidden", "true");
+
+  for (const [tag, attrs] of PIECE_SHAPES[piece.type] || []) {
+    const element = document.createElementNS(SVG_NS, tag);
+    for (const [name, value] of Object.entries(attrs)) {
+      element.setAttribute(name, value);
+    }
+    svg.append(element);
+  }
+
+  return svg;
 }
 
 function selectedTargets(state) {
