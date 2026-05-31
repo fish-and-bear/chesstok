@@ -167,7 +167,18 @@ function checkSourceHygiene() {
     if (app.includes(blocked)) fail(`app.js should not use ${blocked}`);
   }
 
-  for (const stale of ["rankLabel", "questLabel", "progressLabel", "intentLabel", "move-rush-v8", "?v=8", "move-rush-v13", "?v=13"]) {
+  for (const stale of [
+    "rankLabel",
+    "questLabel",
+    "progressLabel",
+    "intentLabel",
+    "move-rush-v8",
+    "?v=8",
+    "move-rush-v13",
+    "?v=13",
+    "move-rush-v14",
+    "?v=14"
+  ]) {
     if (`${app}\n${index}\n${styles}\n${read("service-worker.js")}`.includes(stale)) fail(`Found stale UI/build token ${stale}`);
   }
 

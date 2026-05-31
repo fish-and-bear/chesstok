@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "14";
+const ASSET_VERSION = "15";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -410,7 +410,7 @@ function preparePuzzle(puzzle, index) {
     userHits: 0,
     badSquares: [],
     activatedAt: 0,
-    lastSquares: [firstMove.from, firstMove.to],
+    lastSquares: [],
     solution,
     panel: null,
     board: null,
@@ -655,7 +655,6 @@ function renderBoard(state) {
 
   const activeColor = state.game.turn();
   const targets = selectedTargets(state);
-  const lastSquares = new Set(state.lastSquares);
   const badSquares = new Set(state.badSquares);
 
   for (const square of state.squareOrder) {
@@ -665,7 +664,6 @@ function renderBoard(state) {
     const classes = ["square", nodes.isLight ? "light" : "dark"];
 
     if (state.selected === square) classes.push("selected");
-    if (lastSquares.has(square)) classes.push("last");
     if (badSquares.has(square)) classes.push("bad");
     if (piece && piece.color === activeColor) classes.push("can-move");
     if (target) classes.push("target");

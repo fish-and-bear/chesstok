@@ -8,7 +8,6 @@
   --rule: #334337;
   --light-square: #eadfbe;
   --dark-square: #6d8d65;
-  --last-square: #d1a348;
   --select: #35b7a6;
   --bad: #d95f4f;
   --good: #91cf74;
@@ -268,20 +267,15 @@ body.rush-mode .reel.active .board-wrap {
   background: var(--dark-square);
 }
 
-.square.last::before,
 .square.selected::before {
   position: absolute;
   inset: 0;
   box-sizing: border-box;
   content: "";
-  border: 3px solid var(--last-square);
+  border: 3px solid var(--select);
   border-radius: 0;
   pointer-events: none;
   z-index: 5;
-}
-
-.square.selected::before {
-  border-color: var(--select);
 }
 
 .square.bad::before {
