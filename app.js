@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "40";
+const ASSET_VERSION = "41";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -441,6 +441,39 @@ function applyUci(game, uci) {
 
 function moveToUci(move) {
   return `${move.from}${move.to}${move.promotion || ""}`;
+}
+
+function legalMovesByFrom(game) {
+  const movesByFrom = new Map();
+  for (const move of game.moves({ verbose: true })) {
+    const moves = movesByFrom.get(move.from);
+    if (moves) moves.push(move);
+    else movesByFrom.set(move.from, [move]);
+  }
+  return movesByFrom;
+}
+
+function movesFrom(movesByFrom, square) {
+  return movesByFrom.get(square) || [];
+}
+
+function checkedKingSquare(game) {
+  if (!game.isCheck()) return "";
+  const color = game.turn();
+  for (const row of game.board()) {
+    for (const piece of row) {
+      if (piece?.type === "k" && piece.color === color) return piece.square;
+    }
+  }
+  return "";
+}
+
+function isUserTurn(state) {
+  return state.cursor % 2 === 1;
+}
+
+function canInteractWithBoard(state) {
+  return !state.solved && state.reviewPly === null && isUserTurn(state) && !state.panel?.classList.contains("replying");
 }
 
 function preparePuzzle(puzzle, index) {
@@ -973,7 +1006,10 @@ function renderBoard(state) {
   const review = reviewSnapshot(state);
   const boardGame = review?.game || state.game;
   const activeColor = boardGame.turn();
-  const targets = review ? new Map() : selectedTargets(state);
+  const interactive = canInteractWithBoard(state);
+  const legalMoves = interactive ? legalMovesByFrom(boardGame) : new Map();
+  const targets = interactive ? selectedTargets(state, legalMoves) : new Map();
+  const checkSquare = checkedKingSquare(boardGame);
   const badSquares = new Set(state.badSquares);
   const lastSquares = new Set(review?.lastSquares || state.lastSquares);
 
@@ -984,16 +1020,19 @@ function renderBoard(state) {
     const classes = ["square", nodes.isLight ? "light" : "dark"];
 
     if (state.selected === square) classes.push("selected");
+    if (square === checkSquare) classes.push("in-check");
     if (lastSquares.has(square)) classes.push("last-move");
     if (badSquares.has(square)) classes.push("bad");
-    if (piece && piece.color === activeColor) classes.push("can-move");
+    if (interactive && piece && piece.color === activeColor && movesFrom(legalMoves, square).length) classes.push("can-move");
     if (target) classes.push("target");
     if (target?.captured) classes.push("capture");
 
     nodes.button.className = classes.join(" ");
     nodes.button.setAttribute(
       "aria-label",
-      piece ? `${piece.color === "w" ? "White" : "Black"} ${PIECE_NAMES[piece.type]} on ${square}` : square
+      piece
+        ? `${piece.color === "w" ? "White" : "Black"} ${PIECE_NAMES[piece.type]} on ${square}${square === checkSquare ? ", in check" : ""}`
+        : square
     );
 
     nodes.marker.hidden = !target;
@@ -1067,10 +1106,10 @@ function createPieceSvg(piece) {
   return svg;
 }
 
-function selectedTargets(state) {
+function selectedTargets(state, legalMoves = legalMovesByFrom(state.game)) {
   if (!state.selected) return new Map();
   const targets = new Map();
-  for (const move of state.game.moves({ square: state.selected, verbose: true })) {
+  for (const move of movesFrom(legalMoves, state.selected)) {
     targets.set(move.to, move);
   }
   return targets;
@@ -1119,12 +1158,13 @@ function handleSquareTap(state, square) {
     clearReview(state);
     if (state.solved) return;
   }
-  if (state.solved) return;
+  if (!canInteractWithBoard(state)) return;
 
   const piece = state.game.get(square);
   const turn = state.game.turn();
+  const legalMoves = legalMovesByFrom(state.game);
   if (!state.selected) {
-    if (piece && piece.color === turn) {
+    if (piece && piece.color === turn && movesFrom(legalMoves, square).length) {
       state.selected = square;
       renderBoard(state);
       markFeedback(state, "");
@@ -1143,26 +1183,25 @@ function handleSquareTap(state, square) {
   }
 
   if (piece && piece.color === turn) {
-    state.selected = square;
-    renderBoard(state);
-    markFeedback(state, "");
-    pulsePanel(state, "select");
-    updateDock();
-    tick("tap");
+    if (movesFrom(legalMoves, square).length) {
+      state.selected = square;
+      renderBoard(state);
+      markFeedback(state, "");
+      pulsePanel(state, "select");
+      updateDock();
+      tick("tap");
+    }
     return;
   }
 
   const expected = state.moves[state.cursor];
   const candidate = `${state.selected}${square}`;
   const promotionCandidate = `${candidate}q`;
-  const legal = state.game
-    .moves({ square: state.selected, verbose: true })
-    .find((move) => moveToUci(move) === candidate || moveToUci(move) === promotionCandidate);
+  const legal = movesFrom(legalMoves, state.selected).find(
+    (move) => moveToUci(move) === candidate || moveToUci(move) === promotionCandidate
+  );
 
-  if (!legal) {
-    miss(state, "", [state.selected, square]);
-    return;
-  }
+  if (!legal) return;
 
   const userUci = moveToUci(legal);
   if (userUci !== expected && !(legal.promotion && promotionCandidate === expected)) {
@@ -1444,12 +1483,14 @@ function updateDock() {
   if (!state) return;
   const puzzle = state.puzzle;
   const side = state.game.turn() === "w" ? "White" : "Black";
-  const nextTitle = state.solved ? "Solved" : `${side} to move`;
+  const inCheck = !state.solved && state.game.isCheck();
+  const nextTitle = state.solved ? "Solved" : inCheck ? `${side} in check` : `${side} to move`;
   const nextRating = `${puzzle.rating} · ${difficultyForRating(puzzle.rating)}`;
   const nextStreak = String(session.streak);
   const nextSolved = String(session.solved);
   const favorite = session.favorites.has(puzzle.id);
 
+  title.classList.toggle("in-check", inCheck);
   if (lastTitleText !== nextTitle) {
     title.textContent = nextTitle;
     lastTitleText = nextTitle;
