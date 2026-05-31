@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "47";
+const ASSET_VERSION = "48";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -76,6 +76,8 @@ const flowFill = document.querySelector("#flowFill");
 const clockValue = document.querySelector("#clockValue");
 const comboToast = document.querySelector("#comboToast");
 const saveIcon = saveButton.querySelector("span");
+const saveCount = document.querySelector("#saveCount");
+const saveLabel = document.querySelector("#saveLabel");
 
 document.documentElement.dataset.chesstok = "loading";
 const bootStartedAt = performance.now();
@@ -140,6 +142,7 @@ let clockResetTimer = 0;
 let clockLastTick = 0;
 let clockExpired = false;
 let xpBumpTimer = 0;
+let savePopTimer = 0;
 
 async function readSavedState() {
   const localSnapshot = readLocalSnapshot();
@@ -1459,9 +1462,7 @@ function updateDock() {
   updateXpMeter();
   updateClockDisplay();
   document.body.classList.toggle("rush-mode", isRush());
-  saveButton.classList.toggle("active", favorite);
-  saveButton.setAttribute("aria-pressed", favorite ? "true" : "false");
-  if (saveIcon) saveIcon.textContent = favorite ? "\u2605" : "\u2606";
+  updateSaveControl(favorite);
   revealButton.disabled = state.solved;
   revealButton.setAttribute("aria-disabled", state.solved ? "true" : "false");
 
@@ -1547,6 +1548,34 @@ function pulseXpMeter() {
     xpStat.classList.remove("gain");
     xpBumpTimer = 0;
   }, 520);
+}
+
+function updateSaveControl(favorite = false) {
+  const count = session.favorites.size;
+  const countText = count > 99 ? "99+" : count ? String(count) : "";
+  const label = favorite ? "Saved" : "Save";
+  const detail = count === 1 ? "1 saved puzzle" : `${count} saved puzzles`;
+
+  saveButton.classList.toggle("active", favorite);
+  saveButton.classList.toggle("has-saves", count > 0);
+  saveButton.setAttribute("aria-pressed", favorite ? "true" : "false");
+  saveButton.setAttribute("aria-label", `${label} puzzle, ${detail}`);
+  saveButton.title = favorite ? "Saved" : "Save";
+
+  if (saveIcon) saveIcon.textContent = favorite ? "\u2605" : "\u2606";
+  if (saveCount) saveCount.textContent = countText;
+  if (saveLabel) saveLabel.textContent = label;
+}
+
+function pulseSaveButton() {
+  if (savePopTimer) window.clearTimeout(savePopTimer);
+  saveButton.classList.remove("just-saved");
+  void saveButton.offsetWidth;
+  saveButton.classList.add("just-saved");
+  savePopTimer = window.setTimeout(() => {
+    saveButton.classList.remove("just-saved");
+    savePopTimer = 0;
+  }, 360);
 }
 
 function syncReviewLine(state, showLine) {
@@ -1761,11 +1790,12 @@ function toggleFavorite() {
     flash("Removed");
   } else {
     session.favorites.add(id);
-    flash("Saved");
+    flash(`Saved ${session.favorites.size}`);
   }
   tick("tap");
+  pulseSaveButton();
   updateDock();
-  saveState();
+  saveState({ immediate: true });
 }
 
 function flash(text) {
@@ -1902,13 +1932,10 @@ async function boot() {
   try {
     await loadPuzzles();
 
-    if (!PERF_MODE) {
-      try {
-        applySavedState(await readSavedState());
-      } catch {}
-    } else {
-      applyPerfOverrides();
-    }
+    try {
+      applySavedState(await readSavedState());
+    } catch {}
+    if (PERF_MODE) applyPerfOverrides();
 
     buildFeed();
     watchPanels();
@@ -2044,7 +2071,9 @@ function stopStreakClock() {
   if (clockInterval) window.clearInterval(clockInterval);
   if (clockResetTimer) window.clearTimeout(clockResetTimer);
   if (xpBumpTimer) window.clearTimeout(xpBumpTimer);
+  if (savePopTimer) window.clearTimeout(savePopTimer);
   clockInterval = 0;
   clockResetTimer = 0;
   xpBumpTimer = 0;
+  savePopTimer = 0;
 }

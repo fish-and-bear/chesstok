@@ -708,6 +708,7 @@ body.rush-mode .reel.active .board-wrap {
 }
 
 .icon-button {
+  position: relative;
   display: grid;
   width: 52px;
   height: 52px;
@@ -748,13 +749,45 @@ body.rush-mode .reel.active .board-wrap {
 
 .icon-button.active {
   border-color: var(--warn);
+  background: rgba(54, 44, 20, 0.88);
   color: var(--warn);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(226, 189, 99, 0.22),
+    inset 0 1px 0 rgba(245, 241, 232, 0.08);
 }
 
 .icon-button:disabled {
   cursor: default;
   opacity: 0.42;
   transform: none;
+}
+
+.save-count {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  display: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid rgba(18, 26, 21, 0.76);
+  border-radius: 999px;
+  background: var(--warn);
+  color: #17140d;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 16px;
+  place-items: center;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.32);
+}
+
+.icon-button.has-saves .save-count {
+  display: grid;
+}
+
+.icon-button.just-saved {
+  animation: save-pop 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .rail-label {
@@ -979,6 +1012,20 @@ body.rush-mode .reel.active .board-wrap {
   100% {
     opacity: 0;
     transform: translateY(-14px) scale(0.98);
+  }
+}
+
+@keyframes save-pop {
+  0% {
+    transform: scale(1);
+  }
+
+  42% {
+    transform: scale(1.08);
+  }
+
+  100% {
+    transform: scale(1);
   }
 }
 

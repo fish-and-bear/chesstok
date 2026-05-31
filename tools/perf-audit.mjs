@@ -85,7 +85,7 @@ try {
     })`);
 
     if (before.perf.readyMs > 5000) errors.push(`${viewport.name}: ready took ${before.perf.readyMs}ms; budget is 5000ms`);
-    if (before.perf.version !== "47" || jump.perf.version !== "47") errors.push(`${viewport.name}: loaded app version is not 47`);
+    if (before.perf.version !== "48" || jump.perf.version !== "48") errors.push(`${viewport.name}: loaded app version is not 48`);
     if (before.reels > 4) errors.push(`${viewport.name}: initial live reels ${before.reels}; budget is 4`);
     if (jump.reels > 7) errors.push(`${viewport.name}: jump live reels ${jump.reels}; budget is 7`);
     if (jump.boards > 7) errors.push(`${viewport.name}: jump live boards ${jump.boards}; budget is 7`);
@@ -115,6 +115,7 @@ try {
   const adaptiveHigh = await adaptiveSnapshot(cdp, appPort, { streak: 9, band: 1200, flow: 88 });
   const clockExpiry = await clockExpirySnapshot(cdp, appPort);
   const reviewLine = await reviewLineSnapshot(cdp, appPort);
+  const saveControl = await saveControlSnapshot(cdp, appPort);
 
   if (adaptiveHigh.target <= adaptiveLow.target + 320) {
     errors.push(`adaptive target only increased from ${adaptiveLow.target} to ${adaptiveHigh.target}`);
@@ -127,8 +128,13 @@ try {
   if (clockExpiry.clockSeconds < 58) errors.push(`clock did not restart after expiry: ${clockExpiry.clockText}`);
   if (reviewLine.activePly !== "1") errors.push(`solution review did not activate ply 1; got ${reviewLine.activePly || "none"}`);
   if (!reviewLine.lineVisible) errors.push("solution review line is not visible after reveal");
+  if (saveControl.pressed !== "true") errors.push("save button did not become pressed");
+  if (saveControl.countText !== "1") errors.push(`save count did not update: ${saveControl.countText || "empty"}`);
+  if (saveControl.icon !== "\u2605") errors.push(`save icon did not fill: ${saveControl.icon || "empty"}`);
+  if (!saveControl.persisted) errors.push("save did not persist to local storage");
+  if (!saveControl.restored) errors.push("saved puzzle state did not restore after reload");
 
-  console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry, reviewLine }, null, 2));
+  console.log(JSON.stringify({ puzzleBytes, assetBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh }, clockExpiry, reviewLine, saveControl }, null, 2));
   await cdp.close();
 } finally {
   chrome.kill("SIGTERM");
@@ -274,6 +280,54 @@ async function reviewLineSnapshot(cdp, appPort) {
       }, 140);
     })`
   );
+}
+
+async function saveControlSnapshot(cdp, appPort) {
+  await cdp
+    .send("Storage.clearDataForOrigin", {
+      origin: `http://127.0.0.1:${appPort}`,
+      storageTypes: "all"
+    })
+    .catch(() => {});
+
+  const url = `http://127.0.0.1:${appPort}/?perf=save-control`;
+  await navigate(cdp, url);
+  await waitReady(cdp);
+  await evaluate(cdp, `document.querySelector("#saveButton")?.click()`);
+  await delay(260);
+  const saved = await evaluate(
+    cdp,
+    `(() => {
+      const button = document.querySelector("#saveButton");
+      const activeId = document.querySelector(".reel.active")?.dataset.puzzleId || "";
+      const snapshot = JSON.parse(localStorage.getItem("chesstok-state-v1") || "{}");
+      return {
+        activeId,
+        pressed: button?.getAttribute("aria-pressed") || "",
+        label: button?.getAttribute("aria-label") || "",
+        icon: document.querySelector("#saveButton span")?.textContent || "",
+        countText: document.querySelector("#saveCount")?.textContent || "",
+        labelText: document.querySelector("#saveLabel")?.textContent || "",
+        persisted: Array.isArray(snapshot.favorites) && snapshot.favorites.includes(activeId)
+      };
+    })()`
+  );
+
+  await navigate(cdp, `${url}&reload=1`);
+  await waitReady(cdp);
+  const restored = await evaluate(
+    cdp,
+    `(() => ({
+      pressed: document.querySelector("#saveButton")?.getAttribute("aria-pressed") || "",
+      countText: document.querySelector("#saveCount")?.textContent || "",
+      icon: document.querySelector("#saveButton span")?.textContent || ""
+    }))()`
+  );
+
+  return {
+    ...saved,
+    restored: restored.pressed === "true" && restored.countText === "1" && restored.icon === "\u2605"
+  };
 }
 
 async function waitForHttp(url) {

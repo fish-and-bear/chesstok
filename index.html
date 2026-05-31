@@ -34,10 +34,10 @@
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" href="./icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./icon-192.png">
-    <link rel="preload" href="./pieces.svg?v=47" as="image" type="image/svg+xml">
+    <link rel="preload" href="./pieces.svg?v=48" as="image" type="image/svg+xml">
     <link rel="modulepreload" href="./vendor/chess.mjs">
-    <link rel="modulepreload" href="./puzzles.js?v=47">
-    <link rel="stylesheet" href="./styles.css?v=47">
+    <link rel="modulepreload" href="./puzzles.js?v=48">
+    <link rel="stylesheet" href="./styles.css?v=48">
   </head>
   <body>
     <main class="app-shell">
@@ -77,8 +77,9 @@
 
         <button id="saveButton" class="icon-button" type="button" aria-label="Save puzzle" title="Save">
           <span aria-hidden="true">☆</span>
+          <b id="saveCount" class="save-count" aria-hidden="true"></b>
         </button>
-        <span class="rail-label">Save</span>
+        <span id="saveLabel" class="rail-label">Save</span>
 
         <button id="resetButton" class="icon-button" type="button" aria-label="Retry puzzle" title="Retry">
           <span aria-hidden="true">↻</span>
@@ -94,6 +95,6 @@
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
     </main>
 
-    <script type="module" src="./app.js?v=47"></script>
+    <script type="module" src="./app.js?v=48"></script>
   </body>
 </html>
