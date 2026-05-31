@@ -12,6 +12,14 @@
   --bad: #d95f4f;
   --good: #91cf74;
   --warn: #e2bd63;
+  --clock-fill: linear-gradient(90deg, #7fcf74 0%, #b9e58a 100%);
+  --clock-track: linear-gradient(
+    90deg,
+    rgba(217, 95, 79, 0.22) 0%,
+    rgba(226, 189, 99, 0.18) 42%,
+    rgba(145, 207, 116, 0.14) 100%
+  );
+  --clock-glow: rgba(145, 207, 116, 0.2);
   --shadow: rgba(0, 0, 0, 0.42);
   --side-gap: 14px;
   --rail-space: 64px;
@@ -47,6 +55,21 @@ html {
 body {
   min-width: 320px;
   user-select: none;
+}
+
+body.clock-mid {
+  --clock-fill: linear-gradient(90deg, #e2bd63 0%, #ef9350 100%);
+  --clock-glow: rgba(226, 189, 99, 0.24);
+}
+
+body.clock-low {
+  --clock-fill: linear-gradient(90deg, #ef9350 0%, #d95f4f 100%);
+  --clock-glow: rgba(217, 95, 79, 0.3);
+}
+
+body.clock-expired {
+  --clock-fill: linear-gradient(90deg, #d95f4f 0%, #8f3029 100%);
+  --clock-glow: rgba(217, 95, 79, 0.36);
 }
 
 button {
@@ -92,7 +115,8 @@ button {
   left: 0;
   right: 0;
   height: 4px;
-  background: rgba(245, 241, 232, 0.08);
+  background: var(--clock-track);
+  box-shadow: inset 0 -1px 0 rgba(245, 241, 232, 0.08);
   overflow: hidden;
 }
 
@@ -100,18 +124,11 @@ button {
   display: block;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, var(--good), var(--ink));
+  background: var(--clock-fill);
+  box-shadow: 0 0 18px var(--clock-glow);
   transform: scaleX(1);
   transform-origin: left center;
-  transition: transform 220ms linear, background 180ms ease;
-}
-
-body.clock-low .flow-meter span {
-  background: linear-gradient(90deg, var(--warn), var(--ink));
-}
-
-body.clock-expired .flow-meter span {
-  background: linear-gradient(90deg, var(--bad), var(--warn));
+  transition: transform 220ms linear, background 180ms ease, box-shadow 180ms ease;
 }
 
 .clock-value {
@@ -133,9 +150,14 @@ body.clock-expired .flow-meter span {
   transform: translateX(-50%);
 }
 
+body.clock-mid .clock-value {
+  border-color: rgba(226, 189, 99, 0.34);
+  color: #f0d88a;
+}
+
 body.clock-low .clock-value {
-  border-color: rgba(226, 189, 99, 0.36);
-  color: #f5df9a;
+  border-color: rgba(217, 95, 79, 0.46);
+  color: #ffbead;
 }
 
 body.clock-expired .clock-value {

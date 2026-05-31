@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "22";
+const ASSET_VERSION = "23";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -582,6 +582,7 @@ function updateClockDisplay() {
     clockValue.textContent = nextClockText;
     lastClockText = nextClockText;
   }
+  document.body.classList.toggle("clock-mid", remaining > 15_000 && remaining <= 30_000);
   document.body.classList.toggle("clock-low", remaining > 0 && remaining <= 15_000);
   clockValue.setAttribute("aria-label", `${nextClockText} left to keep streak`);
 }
@@ -1505,7 +1506,7 @@ function showFatalError(error) {
   console.error(error);
   stopStreakClock();
   document.documentElement.dataset.moveRush = "error";
-  document.body.classList.remove("clock-low", "clock-expired", "rush-mode", "is-snapping");
+  document.body.classList.remove("clock-mid", "clock-low", "clock-expired", "rush-mode", "is-snapping");
   feed.replaceChildren(createFatalErrorPanel());
   title.textContent = "Could not load";
   ratingValue.textContent = "check connection";
