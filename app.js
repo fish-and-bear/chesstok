@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "46";
+const ASSET_VERSION = "47";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -136,6 +136,7 @@ let lastLineKey = "";
 let lastAdaptKey = "";
 let lastClockText = "";
 let clockInterval = 0;
+let clockResetTimer = 0;
 let clockLastTick = 0;
 let clockExpired = false;
 let xpBumpTimer = 0;
@@ -615,6 +616,8 @@ function syncStreakClock({ allowExpire = true } = {}) {
 }
 
 function resetStreakClock() {
+  if (clockResetTimer) window.clearTimeout(clockResetTimer);
+  clockResetTimer = 0;
   clockExpired = false;
   session.clockRemainingMs = STREAK_CLOCK_MS;
   clockLastTick = performance.now();
@@ -625,20 +628,24 @@ function resetStreakClock() {
 function expireStreakClock() {
   if (clockExpired) return;
   clockExpired = true;
-  const hadStreak = session.streak > 0 || session.cleanRun > 0;
+  const meaningfulStreak = session.streak > 1 || session.cleanRun > 1;
   session.clockRemainingMs = 0;
   session.streak = 0;
   session.cleanRun = 0;
-  session.flow = Math.max(0, session.flow - (hadStreak ? 22 : 10));
+  session.flow = Math.max(0, session.flow - (meaningfulStreak ? 22 : 10));
   adaptUpcomingPuzzles();
   document.body.classList.add("clock-expired");
   updateDock();
   updateClockDisplay();
-  if (hadStreak) {
+  if (meaningfulStreak) {
     flash("Streak reset");
     tick("wrong");
   }
   saveState();
+  clockResetTimer = window.setTimeout(() => {
+    resetStreakClock();
+    saveState();
+  }, 650);
 }
 
 function updateClockDisplay() {
@@ -2035,7 +2042,9 @@ function registerServiceWorker() {
 
 function stopStreakClock() {
   if (clockInterval) window.clearInterval(clockInterval);
+  if (clockResetTimer) window.clearTimeout(clockResetTimer);
   if (xpBumpTimer) window.clearTimeout(xpBumpTimer);
   clockInterval = 0;
+  clockResetTimer = 0;
   xpBumpTimer = 0;
 }
