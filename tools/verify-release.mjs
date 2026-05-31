@@ -40,6 +40,7 @@ function checkRequiredFiles() {
     ".assetsignore",
     "manifest.webmanifest",
     "icon.svg",
+    "pieces.svg",
     "puzzles.js",
     "vendor/chess.mjs",
     "LICENSE",

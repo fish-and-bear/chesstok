@@ -15,6 +15,7 @@ for (const item of [
   "service-worker.js",
   "manifest.webmanifest",
   "icon.svg",
+  "pieces.svg",
   "puzzles.js",
   "_headers"
 ]) {
