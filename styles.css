@@ -480,8 +480,8 @@ body.rush-mode .reel.active .board-wrap {
   border: 1.5px solid rgba(8, 12, 9, 0.9);
   border-radius: 0;
   box-shadow:
-    inset 0 0 0 1px rgba(245, 241, 232, 0.86),
-    inset 0 0 0 3.4px rgba(28, 42, 32, 0.38);
+    inset 0 0 0 3px rgba(245, 241, 232, 0.88),
+    inset 0 0 0 5.4px rgba(28, 42, 32, 0.38);
   pointer-events: none;
   z-index: 2;
 }
