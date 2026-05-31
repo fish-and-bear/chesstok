@@ -146,6 +146,7 @@ h1 {
   height: 100vh;
   height: 100dvh;
   overflow-y: auto;
+  scroll-behavior: smooth;
   scroll-snap-type: y mandatory;
   scrollbar-width: none;
   overscroll-behavior-y: contain;
@@ -172,6 +173,10 @@ h1 {
   transform: translateY(-2px) scale(1.012);
 }
 
+body.is-snapping .reel.active .board-wrap {
+  transform: translateY(-4px) scale(1.018);
+}
+
 body.rush-mode .reel.active .board-wrap {
   box-shadow:
     0 30px 64px rgba(0, 0, 0, 0.48),
@@ -185,6 +190,10 @@ body.rush-mode .reel.active .board-wrap {
 
 .reel.select .board {
   box-shadow: 0 0 0 3px rgba(53, 183, 166, 0.26);
+}
+
+.reel.replying .board {
+  filter: saturate(0.92) brightness(0.96);
 }
 
 .board-wrap {
@@ -254,8 +263,28 @@ body.rush-mode .reel.active .board-wrap {
   border-color: var(--select);
 }
 
+.square.bad::before {
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  box-sizing: border-box;
+  border: 3px solid var(--bad);
+  background: rgba(217, 95, 79, 0.18);
+  content: "";
+  pointer-events: none;
+  animation: bad-square 360ms ease-out both;
+}
+
 .square.can-move {
   cursor: grab;
+}
+
+.square:active .piece {
+  transform: scale(0.94);
+}
+
+.square.selected .piece {
+  transform: translateY(-5%) scale(1.08);
 }
 
 .piece {
@@ -266,6 +295,7 @@ body.rush-mode .reel.active .board-wrap {
   height: 91%;
   pointer-events: none;
   place-items: center;
+  transition: transform 120ms ease;
   user-select: none;
 }
 
@@ -304,6 +334,7 @@ body.rush-mode .reel.active .board-wrap {
   box-shadow:
     0 0 0 3px rgba(12, 16, 14, 0.42),
     0 8px 18px rgba(0, 0, 0, 0.26);
+  animation: target-pop 160ms ease-out both;
 }
 
 .capture-target {
@@ -314,6 +345,7 @@ body.rush-mode .reel.active .board-wrap {
     inset 0 0 0 2px rgba(12, 16, 14, 0.5),
     0 0 0 2px rgba(12, 16, 14, 0.4),
     0 8px 18px rgba(0, 0, 0, 0.24);
+  animation: target-pop 160ms ease-out both;
 }
 
 .coord {
@@ -484,9 +516,19 @@ body.rush-mode .reel.active .board-wrap {
   transform: translateY(-1px);
 }
 
+.icon-button:active {
+  transform: translateY(1px) scale(0.96);
+}
+
 .icon-button.active {
   border-color: var(--warn);
   color: var(--warn);
+}
+
+.icon-button:disabled {
+  cursor: default;
+  opacity: 0.42;
+  transform: none;
 }
 
 .rail-label {
@@ -632,6 +674,32 @@ body.rush-mode .reel.active .board-wrap {
   }
   75% {
     transform: translateX(-4px);
+  }
+}
+
+@keyframes bad-square {
+  0% {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  28% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+@keyframes target-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.52);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 

@@ -27,6 +27,9 @@ const SWIPE_DISTANCE = 42;
 const SWIPE_VELOCITY = 0.42;
 const WHEEL_STEP = 34;
 const SNAP_LOCK_MS = 430;
+const SNAP_CLASS_MS = 520;
+const BAD_SQUARE_MS = 360;
+const BOARD_TAP_LOCK_MS = 260;
 const QUESTS = [
   { type: "clean", target: 3, label: "Clean 3" },
   { type: "solve", target: 5, label: "Solve 5" },
@@ -80,6 +83,8 @@ let saveQueue = Promise.resolve();
 let lastAppliedAt = 0;
 let syncChannel = null;
 let snapLockedUntil = 0;
+let snapClassTimer = 0;
+let boardTapLockedUntil = 0;
 let wheelDelta = 0;
 let wheelTimer = 0;
 let touchStartY = 0;
@@ -385,6 +390,7 @@ function preparePuzzle(puzzle, index) {
     revealed: false,
     wrong: 0,
     userHits: 0,
+    badSquares: [],
     activatedAt: 0,
     lastSquares: [firstMove.from, firstMove.to],
     solution,
@@ -451,6 +457,7 @@ function mountBoard(state) {
   board.setAttribute("role", "grid");
   board.setAttribute("aria-label", "Chess board");
   board.addEventListener("click", (event) => {
+    if (performance.now() < boardTapLockedUntil) return;
     const square = event.target.closest("[data-square]");
     if (!square) return;
     beginAudio();
@@ -533,6 +540,7 @@ function renderBoard(state) {
       button.classList.add(isLight ? "light" : "dark");
       button.classList.toggle("selected", state.selected === square);
       button.classList.toggle("last", state.lastSquares.includes(square));
+      button.classList.toggle("bad", state.badSquares.includes(square));
       button.classList.toggle("can-move", Boolean(piece && piece.color === activeColor));
       button.classList.toggle("target", Boolean(target));
       button.classList.toggle("capture", Boolean(target?.captured));
@@ -639,13 +647,13 @@ function handleSquareTap(state, square) {
     .find((move) => moveToUci(move) === candidate || moveToUci(move) === promotionCandidate);
 
   if (!legal) {
-    miss(state, "Can't move there");
+    miss(state, "", [state.selected, square]);
     return;
   }
 
   const userUci = moveToUci(legal);
   if (userUci !== expected && !(legal.promotion && promotionCandidate === expected)) {
-    miss(state, "Try another move");
+    miss(state, "", [state.selected, square]);
     return;
   }
 
@@ -656,10 +664,12 @@ function playExpectedMove(state, actor) {
   const move = applyUci(state.game, state.moves[state.cursor]);
   state.lastSquares = [move.from, move.to];
   state.selected = null;
+  state.badSquares = [];
   state.cursor += 1;
   if (actor === "user") state.userHits += 1;
+  state.panel.classList.toggle("replying", actor === "user" && state.cursor < state.moves.length);
   renderBoard(state);
-  markFeedback(state, actor === "user" ? "Good move" : `They play ${move.san}`);
+  markFeedback(state, actor === "user" ? "Nice" : "");
   if (actor === "user") {
     session.flow = Math.min(100, session.flow + 18 + Math.min(session.streak, 5) * 3);
     floatCue(state, `+${10 + session.streak * 2}`);
@@ -676,14 +686,16 @@ function playExpectedMove(state, actor) {
   if (actor !== "user") return;
 
   window.setTimeout(() => {
-    if (state.cursor < state.moves.length && !state.solved) {
+    if (session.active === state.index && state.cursor < state.moves.length && !state.solved) {
+      state.panel.classList.remove("replying");
       playExpectedMove(state, "reply");
     }
   }, isRush() ? RUSH_DELAY : MOVE_DELAY);
 }
 
-function miss(state, text) {
+function miss(state, text, squares = []) {
   state.wrong += 1;
+  state.badSquares = squares.filter(Boolean);
   state.selected = null;
   session.streak = 0;
   session.cleanRun = 0;
@@ -691,11 +703,19 @@ function miss(state, text) {
   state.panel.classList.remove("shake");
   void state.panel.offsetWidth;
   state.panel.classList.add("shake");
+  renderBoard(state);
   markFeedback(state, text);
   floatCue(state, "Nope", "bad");
   tick("wrong");
   updateDock();
   saveState();
+  const badKey = state.badSquares.join("|");
+  window.setTimeout(() => {
+    if (state.badSquares.join("|") !== badKey) return;
+    if (!state.badSquares.length) return;
+    state.badSquares = [];
+    renderBoard(state);
+  }, BAD_SQUARE_MS);
 }
 
 function solve(state) {
@@ -704,6 +724,7 @@ function solve(state) {
   const alreadyCounted = session.solvedIds.has(state.puzzle.id);
   state.solved = true;
   state.revealed = true;
+  state.panel.classList.remove("replying");
   state.panel.classList.add("solved");
 
   if (usedAnswer) {
@@ -850,7 +871,14 @@ let audioContext = null;
 function beginAudio() {
   if (!session.mutedUntilGesture) return;
   session.mutedUntilGesture = false;
-  audioContext = new AudioContext();
+  try {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) return;
+    audioContext = new AudioCtor();
+    audioContext.resume?.().catch(() => {});
+  } catch {
+    audioContext = null;
+  }
 }
 
 function tick(kind) {
@@ -867,16 +895,18 @@ function tick(kind) {
     bonus: [760, 0.08, 0.05],
     wrong: [110, 0.07, 0.05]
   };
-  const [frequency, duration, volume] = tones[kind] || tones.tap;
-  const oscillator = audioContext.createOscillator();
-  const gain = audioContext.createGain();
-  oscillator.frequency.value = frequency;
-  oscillator.type = "triangle";
-  gain.gain.value = volume;
-  oscillator.connect(gain);
-  gain.connect(audioContext.destination);
-  oscillator.start();
-  oscillator.stop(audioContext.currentTime + duration);
+  try {
+    const [frequency, duration, volume] = tones[kind] || tones.tap;
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    oscillator.frequency.value = frequency;
+    oscillator.type = "triangle";
+    gain.gain.value = volume;
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + duration);
+  } catch {}
 }
 
 function updateDock() {
@@ -891,7 +921,10 @@ function updateDock() {
   flowFill.style.transform = `scaleX(${Math.max(0.04, session.flow / 100)})`;
   document.body.classList.toggle("rush-mode", isRush());
   saveButton.classList.toggle("active", session.favorites.has(puzzle.id));
+  saveButton.setAttribute("aria-pressed", session.favorites.has(puzzle.id) ? "true" : "false");
   saveButton.querySelector("span").textContent = session.favorites.has(puzzle.id) ? "\u2605" : "\u2606";
+  revealButton.disabled = state.solved;
+  revealButton.setAttribute("aria-disabled", state.solved ? "true" : "false");
 
   const showLine = state.revealed || state.solved;
   dock.classList.toggle("has-line", showLine);
@@ -912,13 +945,26 @@ function createLineItem(san, number) {
 function setActive(index) {
   index = Math.max(0, Math.min(index, session.puzzles.length - 1));
   if (index === session.active) return;
-  session.panels[session.active]?.classList.remove("active");
+  const previousIndex = session.active;
+  const previousState = session.states[previousIndex];
+  if (previousState) {
+    previousState.selected = null;
+    previousState.badSquares = [];
+    previousState.panel?.classList.remove("select", "shake", "replying");
+    renderBoard(previousState);
+  }
+  session.panels[previousIndex]?.classList.remove("active");
   session.active = index;
   session.lastPuzzleId = session.puzzles[session.active]?.id || "";
   session.selected = null;
   renderNearby(session.active);
   const state = ensureState(session.active);
-  if (state && !state.activatedAt) state.activatedAt = performance.now();
+  if (state) {
+    state.selected = null;
+    state.badSquares = [];
+    if (!state.activatedAt) state.activatedAt = performance.now();
+    renderBoard(state);
+  }
   session.panels[session.active]?.classList.add("active");
   updateDock();
   saveState({ broadcast: false });
@@ -942,19 +988,25 @@ function snapToIndex(index, behavior = "smooth") {
   index = Math.max(0, Math.min(index, session.puzzles.length - 1));
   renderNearby(index);
   snapLockedUntil = performance.now() + SNAP_LOCK_MS;
+  document.body.classList.add("is-snapping");
+  if (snapClassTimer) window.clearTimeout(snapClassTimer);
+  snapClassTimer = window.setTimeout(() => document.body.classList.remove("is-snapping"), SNAP_CLASS_MS);
   feed.scrollTo({ top: index * feed.clientHeight, behavior });
 }
 
 function revealActive() {
   const state = ensureState(session.active);
   if (!state) return;
+  if (state.solved) return;
   if (!state.revealed && !state.solved) {
     session.streak = 0;
     session.cleanRun = 0;
   }
   state.revealed = true;
   state.selected = null;
+  state.badSquares = [];
   session.flow = Math.max(0, session.flow - 10);
+  state.panel.classList.remove("replying");
   state.panel.classList.add("revealed");
   renderBoard(state);
   markFeedback(state, "Answer shown");
@@ -971,8 +1023,9 @@ function resetActive() {
   fresh.board = old.board;
   fresh.activatedAt = performance.now();
   session.states[session.active] = fresh;
-  old.panel.classList.remove("solved", "revealed", "shake");
+  old.panel.classList.remove("solved", "revealed", "shake", "select", "hit", "replying");
   old.panel.querySelector(".pulse")?.replaceChildren();
+  old.panel.querySelector(".floaters")?.replaceChildren();
   markFeedback(fresh, "");
   renderBoard(fresh);
   updateDock();
@@ -981,6 +1034,10 @@ function resetActive() {
 function skipActive() {
   const state = ensureState(session.active);
   if (!state) return;
+  state.selected = null;
+  state.badSquares = [];
+  state.panel.classList.remove("select", "shake", "replying");
+  renderBoard(state);
   session.flow = Math.max(0, session.flow - 6);
   markFeedback(state, "Skipped");
   updateDock();
@@ -1133,6 +1190,7 @@ function finishSwipe(startX, startY, endX, endY, startedAt) {
   const velocity = Math.abs(deltaY) / elapsed;
   if (Math.abs(deltaY) <= Math.abs(deltaX) || performance.now() < snapLockedUntil) return;
   if (Math.abs(deltaY) > SWIPE_DISTANCE || velocity > SWIPE_VELOCITY) {
+    boardTapLockedUntil = performance.now() + BOARD_TAP_LOCK_MS;
     snapToRelative(deltaY > 0 ? 1 : -1);
     return;
   }
@@ -1159,11 +1217,30 @@ function bindActions() {
   });
 
   window.addEventListener("keydown", (event) => {
-    if (event.key === "ArrowDown" || event.key === " ") skipActive();
-    if (event.key === "ArrowUp") goToPrevious();
-    if (event.key.toLowerCase() === "r") revealActive();
-    if (event.key.toLowerCase() === "s") toggleFavorite();
-    if (event.key === "Escape") resetActive();
+    if (event.key === "ArrowDown" || event.key === " ") {
+      event.preventDefault();
+      skipActive();
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      goToPrevious();
+      return;
+    }
+    if (event.key.toLowerCase() === "r") {
+      event.preventDefault();
+      revealActive();
+      return;
+    }
+    if (event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      toggleFavorite();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      resetActive();
+    }
   });
 }
 
