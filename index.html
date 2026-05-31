@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#101512">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; worker-src 'self'; manifest-src 'self'; trusted-types default; require-trusted-types-for 'script'">
+    <meta name="referrer" content="no-referrer">
+    <title>Move Rush</title>
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" href="./icon.svg" type="image/svg+xml">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Move Rush">
+    <link rel="stylesheet" href="./styles.css?v=9">
+  </head>
+  <body>
+    <main class="app-shell">
+      <div class="flow-meter" aria-label="Flow">
+        <span id="flowFill"></span>
+      </div>
+      <header class="hud" aria-label="Session">
+        <div>
+          <p class="kicker">Move Rush</p>
+          <h1 id="puzzleTitle">To move</h1>
+        </div>
+        <div class="stats" aria-label="Stats">
+          <span><b id="streakValue">0</b> streak</span>
+          <span><b id="solvedValue">0</b> solved</span>
+        </div>
+      </header>
+
+      <section id="feed" class="feed" aria-label="Puzzle feed"></section>
+
+      <aside class="rail" aria-label="Actions">
+        <button id="skipButton" class="icon-button" type="button" aria-label="Skip puzzle" title="Skip">
+          <span aria-hidden="true">↑</span>
+        </button>
+        <span class="rail-label">Skip</span>
+
+        <button id="revealButton" class="icon-button" type="button" aria-label="Show answer" title="Show answer">
+          <span aria-hidden="true">?</span>
+        </button>
+        <span class="rail-label">Answer</span>
+
+        <button id="saveButton" class="icon-button" type="button" aria-label="Save puzzle" title="Save">
+          <span aria-hidden="true">☆</span>
+        </button>
+        <span class="rail-label">Save</span>
+
+        <button id="resetButton" class="icon-button" type="button" aria-label="Retry puzzle" title="Retry">
+          <span aria-hidden="true">↻</span>
+        </button>
+        <span class="rail-label">Retry</span>
+      </aside>
+
+      <footer id="dock" class="dock" aria-live="polite">
+        <ol id="lineList" class="line-list" aria-label="Solution line"></ol>
+      </footer>
+
+      <div id="comboToast" class="combo-toast" aria-live="polite"></div>
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </main>
+
+    <script type="module" src="./app.js?v=9"></script>
+  </body>
+</html>

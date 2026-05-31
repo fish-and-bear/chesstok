@@ -1,0 +1,19 @@
+{
+  "name": "move-rush",
+  "version": "0.1.0",
+  "description": "A mobile-first chess puzzle feed for quick tactical reps.",
+  "type": "module",
+  "license": "MIT",
+  "private": false,
+  "scripts": {
+    "check": "node tools/verify-release.mjs",
+    "preview": "python3 -m http.server 8899 --bind 127.0.0.1 --directory ."
+  },
+  "keywords": [
+    "chess",
+    "puzzles",
+    "tactics",
+    "pwa",
+    "lichess"
+  ]
+}
