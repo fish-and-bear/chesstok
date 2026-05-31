@@ -11,3 +11,9 @@ Third-party code
 
 vendor/chess.mjs is derived from chess.js by Jeff Hlywa and contributors.
 Its BSD-2-Clause license notice is retained in that file.
+
+Chess piece artwork
+
+pieces.svg uses the Standard SVG chess pieces from Wikimedia Commons, modified
+for cm-chessboard by Stefan Haack. The artwork is licensed under CC BY-SA 3.0.
+Source: https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces/Standard

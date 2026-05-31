@@ -262,8 +262,8 @@ body.rush-mode .reel.active .board-wrap {
   position: relative;
   z-index: 3;
   display: grid;
-  width: 82%;
-  height: 82%;
+  width: 91%;
+  height: 91%;
   pointer-events: none;
   place-items: center;
   user-select: none;
@@ -274,55 +274,19 @@ body.rush-mode .reel.active .board-wrap {
   width: 100%;
   height: 100%;
   overflow: visible;
-  filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.28));
+  filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.28));
 }
 
-.piece-svg * {
-  vector-effect: non-scaling-stroke;
+.white-piece {
+  filter:
+    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.5))
+    drop-shadow(0 4px 3px rgba(0, 0, 0, 0.3));
 }
 
-.piece-shape,
-.piece-line {
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.piece-line {
-  fill: none;
-}
-
-.white-piece .piece-shape {
-  fill: #f7ecd2;
-  stroke: #172018;
-  stroke-width: 4;
-}
-
-.white-piece .piece-line {
-  stroke: #172018;
-  stroke-width: 5;
-}
-
-.white-piece .piece-detail {
-  fill: #172018;
-}
-
-.black-piece .piece-shape {
-  fill: #141c16;
-  stroke: #f1ddaa;
-  stroke-width: 3.5;
-}
-
-.black-piece .piece-line {
-  stroke: #f1ddaa;
-  stroke-width: 4.5;
-}
-
-.black-piece .piece-detail {
-  fill: #f1ddaa;
-}
-
-.piece-line.heavy {
-  stroke-width: 6;
+.black-piece {
+  filter:
+    drop-shadow(0 1px 0 rgba(255, 241, 196, 0.22))
+    drop-shadow(0 4px 3px rgba(0, 0, 0, 0.32));
 }
 
 .move-target {

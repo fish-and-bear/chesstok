@@ -10,46 +10,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const PIECE_SHAPES = {
-  p: [
-    ["circle", { class: "piece-shape", cx: "50", cy: "28", r: "13" }],
-    ["path", { class: "piece-shape", d: "M38 42h24l8 33H30z" }],
-    ["path", { class: "piece-shape", d: "M27 76h46v11H27z" }]
-  ],
-  n: [
-    ["path", { class: "piece-shape", d: "M30 78h43v10H30z" }],
-    [
-      "path",
-      {
-        class: "piece-shape",
-        d: "M36 77c2-18 8-30 21-39l-10-9 8-13 23 19-7 9 4 15-18 5-7-9c-6 7-9 14-10 22z"
-      }
-    ],
-    ["circle", { class: "piece-detail", cx: "61", cy: "36", r: "3.5" }]
-  ],
-  b: [
-    ["path", { class: "piece-shape", d: "M50 16c14 10 20 22 20 36 0 14-8 24-20 24S30 66 30 52c0-14 6-26 20-36z" }],
-    ["path", { class: "piece-line", d: "M58 29 42 61" }],
-    ["path", { class: "piece-shape", d: "M29 77h42v10H29z" }]
-  ],
-  r: [
-    ["path", { class: "piece-shape", d: "M28 23h9v10h8V23h10v10h8V23h9v24H28z" }],
-    ["path", { class: "piece-shape", d: "M34 47h32v29H34z" }],
-    ["path", { class: "piece-shape", d: "M27 77h46v10H27z" }]
-  ],
-  q: [
-    ["path", { class: "piece-shape", d: "M26 77h48v10H26z" }],
-    ["path", { class: "piece-shape", d: "M31 70 25 31l15 18 10-25 10 25 15-18-6 39z" }],
-    ["circle", { class: "piece-shape", cx: "25", cy: "29", r: "5" }],
-    ["circle", { class: "piece-shape", cx: "50", cy: "23", r: "5" }],
-    ["circle", { class: "piece-shape", cx: "75", cy: "29", r: "5" }]
-  ],
-  k: [
-    ["path", { class: "piece-line heavy", d: "M50 13v23M40 24h20" }],
-    ["path", { class: "piece-shape", d: "M32 73c3-22 11-34 18-38 7 4 15 16 18 38z" }],
-    ["path", { class: "piece-shape", d: "M27 77h46v10H27z" }]
-  ]
-};
+const PIECE_SPRITE = "./pieces.svg";
 
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const RANKS = ["8", "7", "6", "5", "4", "3", "2", "1"];
@@ -62,6 +23,10 @@ const STORAGE_VERSION = 3;
 const SAVE_DEBOUNCE = 180;
 const MOVE_DELAY = 420;
 const RUSH_DELAY = 260;
+const SWIPE_DISTANCE = 42;
+const SWIPE_VELOCITY = 0.42;
+const WHEEL_STEP = 34;
+const SNAP_LOCK_MS = 430;
 const QUESTS = [
   { type: "clean", target: 3, label: "Clean 3" },
   { type: "solve", target: 5, label: "Solve 5" },
@@ -114,6 +79,19 @@ let saveTimer = 0;
 let saveQueue = Promise.resolve();
 let lastAppliedAt = 0;
 let syncChannel = null;
+let snapLockedUntil = 0;
+let wheelDelta = 0;
+let wheelTimer = 0;
+let touchStartY = 0;
+let touchStartX = 0;
+let touchStartAt = 0;
+let pointerStartY = 0;
+let pointerStartX = 0;
+let pointerStartAt = 0;
+let scrollSettleTimer = 0;
+let lastScrollTop = 0;
+let lastScrollDirection = 0;
+let resizeTimer = 0;
 
 async function readSavedState() {
   const localSnapshot = readLocalSnapshot();
@@ -597,17 +575,15 @@ function renderBoard(state) {
 function createPieceSvg(piece) {
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.classList.add("piece-svg", piece.color === "w" ? "white-piece" : "black-piece");
-  svg.setAttribute("viewBox", "0 0 100 100");
+  svg.setAttribute("viewBox", "0 0 40 40");
   svg.setAttribute("focusable", "false");
   svg.setAttribute("aria-hidden", "true");
 
-  for (const [tag, attrs] of PIECE_SHAPES[piece.type] || []) {
-    const element = document.createElementNS(SVG_NS, tag);
-    for (const [name, value] of Object.entries(attrs)) {
-      element.setAttribute(name, value);
-    }
-    svg.append(element);
-  }
+  const use = document.createElementNS(SVG_NS, "use");
+  const pieceId = `${piece.color}${piece.type}`;
+  use.setAttribute("href", `${PIECE_SPRITE}#${pieceId}`);
+  use.setAttributeNS("http://www.w3.org/1999/xlink", "href", `${PIECE_SPRITE}#${pieceId}`);
+  svg.append(use);
 
   return svg;
 }
@@ -949,9 +925,24 @@ function setActive(index) {
 }
 
 function goToNext() {
-  const next = (session.active + 1) % session.puzzles.length;
-  renderNearby(next);
-  session.panels[next].scrollIntoView({ behavior: "smooth", block: "start" });
+  snapToRelative(1);
+}
+
+function goToPrevious() {
+  snapToRelative(-1);
+}
+
+function snapToRelative(direction) {
+  if (!direction || !session.puzzles.length) return;
+  const next = direction > 0 ? (session.active + 1) % session.puzzles.length : Math.max(0, session.active - 1);
+  snapToIndex(next, "smooth");
+}
+
+function snapToIndex(index, behavior = "smooth") {
+  index = Math.max(0, Math.min(index, session.puzzles.length - 1));
+  renderNearby(index);
+  snapLockedUntil = performance.now() + SNAP_LOCK_MS;
+  feed.scrollTo({ top: index * feed.clientHeight, behavior });
 }
 
 function revealActive() {
@@ -1030,10 +1021,123 @@ function watchPanels() {
   feed.addEventListener(
     "scroll",
     () => {
+      const scrollTop = feed.scrollTop;
+      if (Math.abs(scrollTop - lastScrollTop) > 1) lastScrollDirection = scrollTop > lastScrollTop ? 1 : -1;
+      lastScrollTop = scrollTop;
       if (!frame) frame = window.requestAnimationFrame(syncActive);
+      if (scrollSettleTimer) window.clearTimeout(scrollSettleTimer);
+      scrollSettleTimer = window.setTimeout(snapToNearestPanel, 130);
     },
     { passive: true }
   );
+
+  window.addEventListener(
+    "resize",
+    () => {
+      if (resizeTimer) window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => snapToIndex(session.active, "auto"), 120);
+    },
+    { passive: true }
+  );
+}
+
+function snapToNearestPanel() {
+  const page = feed.scrollTop / Math.max(1, feed.clientHeight);
+  const base = Math.floor(page);
+  const progress = page - base;
+  let next = Math.round(page);
+  if (lastScrollDirection > 0 && progress > 0.14) next = base + 1;
+  if (lastScrollDirection < 0 && progress < 0.86) next = base;
+  const targetTop = next * feed.clientHeight;
+  if (Math.abs(feed.scrollTop - targetTop) <= 2) return;
+  snapToIndex(next, "smooth");
+}
+
+function bindSwipeNavigation() {
+  feed.addEventListener("wheel", handleWheel, { passive: false });
+  feed.addEventListener("pointerdown", handlePointerStart, { passive: true });
+  feed.addEventListener("pointerup", handlePointerEnd, { passive: true });
+  feed.addEventListener("pointercancel", clearPointerSwipe, { passive: true });
+  feed.addEventListener(
+    "touchstart",
+    (event) => {
+      const touch = event.changedTouches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+      touchStartAt = performance.now();
+    },
+    { passive: true }
+  );
+  feed.addEventListener("touchend", handleTouchEnd, { passive: true });
+  feed.addEventListener(
+    "touchcancel",
+    () => {
+      touchStartX = 0;
+      touchStartY = 0;
+      touchStartAt = 0;
+    },
+    { passive: true }
+  );
+}
+
+function handlePointerStart(event) {
+  if (event.pointerType === "mouse") return;
+  pointerStartX = event.clientX;
+  pointerStartY = event.clientY;
+  pointerStartAt = performance.now();
+}
+
+function handlePointerEnd(event) {
+  if (!pointerStartAt || event.pointerType === "mouse") return;
+  finishSwipe(pointerStartX, pointerStartY, event.clientX, event.clientY, pointerStartAt);
+  clearPointerSwipe();
+}
+
+function clearPointerSwipe() {
+  pointerStartX = 0;
+  pointerStartY = 0;
+  pointerStartAt = 0;
+}
+
+function handleWheel(event) {
+  if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+  event.preventDefault();
+
+  const now = performance.now();
+  if (now < snapLockedUntil) return;
+
+  wheelDelta += event.deltaY;
+  if (wheelTimer) window.clearTimeout(wheelTimer);
+  wheelTimer = window.setTimeout(() => {
+    wheelDelta = 0;
+  }, 90);
+
+  if (Math.abs(wheelDelta) < WHEEL_STEP) return;
+  const direction = wheelDelta > 0 ? 1 : -1;
+  wheelDelta = 0;
+  snapToRelative(direction);
+}
+
+function handleTouchEnd(event) {
+  const touch = event.changedTouches[0];
+  if (!touch || !touchStartAt) return;
+
+  finishSwipe(touchStartX, touchStartY, touch.clientX, touch.clientY, touchStartAt);
+  touchStartAt = 0;
+}
+
+function finishSwipe(startX, startY, endX, endY, startedAt) {
+  const deltaY = startY - endY;
+  const deltaX = startX - endX;
+  const elapsed = Math.max(1, performance.now() - startedAt);
+  const velocity = Math.abs(deltaY) / elapsed;
+  if (Math.abs(deltaY) <= Math.abs(deltaX) || performance.now() < snapLockedUntil) return;
+  if (Math.abs(deltaY) > SWIPE_DISTANCE || velocity > SWIPE_VELOCITY) {
+    snapToRelative(deltaY > 0 ? 1 : -1);
+    return;
+  }
+
+  snapToIndex(Math.round(feed.scrollTop / Math.max(1, feed.clientHeight)), "smooth");
 }
 
 function bindActions() {
@@ -1055,7 +1159,8 @@ function bindActions() {
   });
 
   window.addEventListener("keydown", (event) => {
-    if (event.key === "ArrowUp") skipActive();
+    if (event.key === "ArrowDown" || event.key === " ") skipActive();
+    if (event.key === "ArrowUp") goToPrevious();
     if (event.key.toLowerCase() === "r") revealActive();
     if (event.key.toLowerCase() === "s") toggleFavorite();
     if (event.key === "Escape") resetActive();
@@ -1071,6 +1176,7 @@ async function boot() {
 
   buildFeed();
   watchPanels();
+  bindSwipeNavigation();
   bindActions();
   updateDock();
   setupPersistence();
