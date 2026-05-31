@@ -15,6 +15,10 @@ for (const item of [
   "service-worker.js",
   "manifest.webmanifest",
   "icon.svg",
+  "icon-192.png",
+  "icon-512.png",
+  "social-card-v1.png",
+  "social-card-v1.svg",
   "pieces.svg",
   "puzzles.js",
   "_headers"

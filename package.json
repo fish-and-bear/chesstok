@@ -1,7 +1,7 @@
 {
   "name": "chesstok",
   "version": "0.1.0",
-  "description": "A mobile-first chess puzzle feed for quick tactical reps.",
+  "description": "Chess puzzles in a reels-style feed.",
   "type": "module",
   "license": "MIT",
   "private": false,

@@ -8,7 +8,9 @@ const ASSETS = [
   "./vendor/chess.mjs",
   "./manifest.webmanifest",
   "./pieces.svg?v=22",
-  "./icon.svg"
+  "./icon.svg",
+  "./icon-192.png",
+  "./icon-512.png"
 ];
 const ASSET_URLS = new Set(ASSETS.map((asset) => new URL(asset, self.location).href));
 

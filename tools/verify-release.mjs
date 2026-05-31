@@ -20,6 +20,7 @@ checkJson("vercel.json");
 checkJson("wrangler.jsonc");
 await checkPuzzleShard();
 checkIndex();
+checkSocialAssets();
 checkServiceWorker();
 checkSecurityHeaders();
 checkSourceHygiene();
@@ -43,6 +44,10 @@ function checkRequiredFiles() {
     ".assetsignore",
     "manifest.webmanifest",
     "icon.svg",
+    "icon-192.png",
+    "icon-512.png",
+    "social-card-v1.png",
+    "social-card-v1.svg",
     "pieces.svg",
     "puzzles.js",
     "vendor/chess.mjs",
@@ -137,6 +142,42 @@ function checkIndex() {
   ]) {
     if (!index.includes(directive)) fail(`index.html CSP is missing ${directive}`);
   }
+
+  for (const token of [
+    '<meta name="description"',
+    '<link rel="canonical" href="https://angelicanaguio.com/chesstok/">',
+    'property="og:title"',
+    'property="og:description"',
+    'property="og:image" content="https://angelicanaguio.com/chesstok/social-card-v1.png"',
+    'property="og:image:width" content="1200"',
+    'property="og:image:height" content="630"',
+    'name="twitter:card" content="summary_large_image"',
+    'name="twitter:image" content="https://angelicanaguio.com/chesstok/social-card-v1.png"',
+    '<link rel="apple-touch-icon" href="./icon-192.png">'
+  ]) {
+    if (!index.includes(token)) fail(`index.html is missing social/SEO token: ${token}`);
+  }
+
+  const title = index.match(/<title>([^<]+)<\/title>/)?.[1] || "";
+  const description = index.match(/<meta name="description" content="([^"]+)">/)?.[1] || "";
+  if (title.length < 20 || title.length > 60) fail(`SEO title length should be 20-60 characters, got ${title.length}`);
+  if (description.length < 70 || description.length > 160) {
+    fail(`SEO description length should be 70-160 characters, got ${description.length}`);
+  }
+  if (/unlock|supercharge|seamless|transform|elevate|powerful/i.test(`${title} ${description}`)) {
+    fail("SEO copy contains generic marketing language");
+  }
+}
+
+function checkSocialAssets() {
+  const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+  for (const file of ["icon-192.png", "icon-512.png", "social-card-v1.png"]) {
+    const buffer = fs.readFileSync(resolve(file));
+    if (!buffer.subarray(0, 4).equals(pngSignature)) fail(`${file} is not a PNG`);
+  }
+  if (fs.statSync(resolve("social-card-v1.png")).size > 500_000) fail("social-card-v1.png should stay under 500KB");
+  if (!read("manifest.webmanifest").includes("icon-192.png")) fail("manifest should include icon-192.png");
+  if (!read("manifest.webmanifest").includes("icon-512.png")) fail("manifest should include icon-512.png");
 }
 
 function checkServiceWorker() {
@@ -146,6 +187,7 @@ function checkServiceWorker() {
   const cssVersion = matchVersion(index, "styles.css");
   if (!sw.includes(`app.js?v=${appVersion}`)) fail("service worker cache does not match app.js version");
   if (!sw.includes(`styles.css?v=${cssVersion}`)) fail("service worker cache does not match styles.css version");
+  if (!sw.includes("icon-192.png") || !sw.includes("icon-512.png")) fail("service worker should cache PNG app icons");
   if (!sw.includes("ASSET_URLS")) fail("service worker should only cache known assets");
   if (!sw.includes("navigationPreload")) fail("service worker should enable navigation preload");
   if (!sw.includes("response.ok") || !sw.includes('response.type === "basic"')) {
