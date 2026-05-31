@@ -9,7 +9,7 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "44";
+const ASSET_VERSION = "45";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
@@ -1222,10 +1222,9 @@ function playExpectedMove(state, actor) {
   if (actor === "user") state.userHits += 1;
   state.panel.classList.toggle("replying", actor === "user" && state.cursor < state.moves.length);
   renderBoard(state);
-  markFeedback(state, actor === "user" ? "Nice" : "");
+  markFeedback(state, "");
   if (actor === "user") {
     session.flow = Math.min(100, session.flow + 18 + Math.min(session.streak, 5) * 3);
-    floatCue(state, `+${10 + session.streak * 2}`);
     pulsePanel(state, "hit");
   }
   tick(actor === "user" ? "correct" : "reply");
@@ -1260,7 +1259,6 @@ function miss(state, text, squares = []) {
   state.panel.classList.add("shake");
   renderBoard(state);
   markFeedback(state, text);
-  floatCue(state, "Nope", "bad");
   tick("wrong");
   updateDock();
   saveState();
@@ -1405,7 +1403,8 @@ function isRush() {
 }
 
 function comboFlash(streak, xp) {
-  comboToast.textContent = streak >= 3 ? `Streak ${streak} +${xp}` : `+${xp} XP`;
+  if (streak < 3) return;
+  comboToast.textContent = `Streak ${streak} +${xp}`;
   comboToast.classList.toggle("rush-toast", isRush());
   comboToast.classList.remove("visible");
   void comboToast.offsetWidth;
@@ -1420,47 +1419,15 @@ function pulsePanel(state, name) {
   window.setTimeout(() => state.panel.classList.remove(name), 420);
 }
 
-let audioContext = null;
-
 function beginAudio() {
-  if (!session.mutedUntilGesture) return;
   session.mutedUntilGesture = false;
-  try {
-    const AudioCtor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtor) return;
-    audioContext = new AudioCtor();
-    audioContext.resume?.().catch(() => {});
-  } catch {
-    audioContext = null;
-  }
 }
 
 function tick(kind) {
   if (navigator.vibrate) {
-    const pattern = kind === "wrong" ? [30, 20, 30] : kind === "bonus" ? [18, 24, 18] : kind === "correct" ? 18 : 8;
-    navigator.vibrate(pattern);
+    const pattern = kind === "wrong" ? [16, 16, 16] : kind === "bonus" ? [10, 18, 10] : kind === "correct" ? 10 : kind === "tap" ? 4 : 0;
+    if (pattern) navigator.vibrate(pattern);
   }
-
-  if (!audioContext) return;
-  const tones = {
-    tap: [210, 0.018, 0.018],
-    reply: [260, 0.025, 0.025],
-    correct: [620, 0.055, 0.045],
-    bonus: [760, 0.08, 0.05],
-    wrong: [110, 0.07, 0.05]
-  };
-  try {
-    const [frequency, duration, volume] = tones[kind] || tones.tap;
-    const oscillator = audioContext.createOscillator();
-    const gain = audioContext.createGain();
-    oscillator.frequency.value = frequency;
-    oscillator.type = "triangle";
-    gain.gain.value = volume;
-    oscillator.connect(gain);
-    gain.connect(audioContext.destination);
-    oscillator.start();
-    oscillator.stop(audioContext.currentTime + duration);
-  } catch {}
 }
 
 function updateDock() {
