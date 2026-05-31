@@ -9,11 +9,14 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const ASSET_VERSION = "18";
+const ASSET_VERSION = "19";
 const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
 const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
 let PUZZLES = [];
+let RATING_SORTED_PUZZLES = [];
+let MIN_PUZZLE_RATING = 300;
+let MAX_PUZZLE_RATING = 3200;
 
 const PERF_MODE = new URLSearchParams(window.location.search).has("perf");
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
@@ -35,6 +38,8 @@ const BOARD_PAN_LOCK_MS = 340;
 const BOARD_PAN_DISTANCE = 10;
 const VIRTUAL_RADIUS = 3;
 const STATE_CACHE_RADIUS = 8;
+const ADAPTIVE_LOOKAHEAD = 18;
+const ADAPTIVE_TARGET_OFFSETS = [0, 45, -35, 95, -65, 145, -95, 190, -125, 235, -160, 280, -195, 330, -230, 380, -270, 430];
 const QUESTS = [
   { type: "clean", target: 3, label: "Clean 3" },
   { type: "solve", target: 5, label: "Solve 5" },
@@ -81,6 +86,7 @@ const session = {
   puzzles: [],
   feedStage: null,
   feedSpacer: null,
+  puzzleIndexById: new Map(),
   panelHeight: 0,
   panels: [],
   mounted: new Set(),
@@ -111,6 +117,7 @@ let lastRatingText = "";
 let lastStreakText = "";
 let lastSolvedText = "";
 let lastLineKey = "";
+let lastAdaptKey = "";
 
 async function readSavedState() {
   const localSnapshot = readLocalSnapshot();
@@ -423,20 +430,18 @@ function preparePuzzle(puzzle, index) {
 }
 
 function buildFeed() {
-  const ranked = [...PUZZLES].sort((a, b) => {
-    const distanceA = Math.abs(a.rating - session.band);
-    const distanceB = Math.abs(b.rating - session.band);
-    return distanceA - distanceB || b.popularity - a.popularity;
-  });
+  const ranked = rankPuzzlesForTarget(adaptiveTargetRating());
   const unsolved = ranked.filter((puzzle) => !session.solvedIds.has(puzzle.id));
   const savedRank = session.lastPuzzleId ? ranked.findIndex((puzzle) => puzzle.id === session.lastPuzzleId) : -1;
 
   session.puzzles = unsolved.length ? unsolved : ranked;
+  rebuildPuzzleIndex();
 
   session.states = new Array(session.puzzles.length).fill(null);
   session.panels = [];
   session.mounted.clear();
   session.cached.clear();
+  lastAdaptKey = "";
   const savedIndex = findStartIndexAfterRefresh(savedRank, ranked);
   const startIndex = savedIndex >= 0 ? savedIndex : 0;
 
@@ -455,6 +460,7 @@ function buildFeed() {
 
   session.active = startIndex;
   session.lastPuzzleId = session.puzzles[startIndex]?.id || "";
+  adaptUpcomingPuzzles(true);
   renderNearby(startIndex);
   session.panels[startIndex]?.classList.add("active");
   const firstState = ensureState(startIndex);
@@ -484,6 +490,125 @@ function findUnsolvedFromFullRank(puzzles, start, step) {
     if (puzzle && !session.solvedIds.has(puzzle.id)) return puzzle;
   }
   return null;
+}
+
+function rankPuzzlesForTarget(target) {
+  return [...PUZZLES].sort((a, b) => adaptivePuzzleScore(a, target) - adaptivePuzzleScore(b, target));
+}
+
+function adaptivePuzzleScore(puzzle, target) {
+  return Math.abs(puzzle.rating - target) * 10 - puzzle.popularity;
+}
+
+function adaptiveTargetRating() {
+  const tierLift = [0, 0, 115, 240, 390, 540][streakTier(session.streak)];
+  const resetEase = session.streak === 0 ? -150 : 0;
+  const flowLift = Math.round((session.flow - 45) * 1.7);
+  return clampRating(session.band + tierLift + resetEase + flowLift);
+}
+
+function streakTier(streak) {
+  if (streak >= 12) return 5;
+  if (streak >= 8) return 4;
+  if (streak >= 5) return 3;
+  if (streak >= 3) return 2;
+  return streak > 0 ? 1 : 0;
+}
+
+function clampRating(rating) {
+  return Math.max(MIN_PUZZLE_RATING, Math.min(MAX_PUZZLE_RATING, Math.round(rating)));
+}
+
+function adaptUpcomingPuzzles(force = false) {
+  if (!session.puzzles.length) return;
+  const start = session.active + 1;
+  if (start >= session.puzzles.length) return;
+
+  const target = adaptiveTargetRating();
+  const adaptKey = `${session.active}:${streakTier(session.streak)}:${Math.round(target / 25)}:${session.solvedIds.size}`;
+  if (!force && adaptKey === lastAdaptKey) return;
+  lastAdaptKey = adaptKey;
+
+  const end = Math.min(session.puzzles.length, start + ADAPTIVE_LOOKAHEAD);
+  const reserved = new Set();
+  for (let index = 0; index < start; index += 1) {
+    const puzzle = session.puzzles[index];
+    if (puzzle) reserved.add(puzzle.id);
+  }
+
+  for (let slot = start; slot < end; slot += 1) {
+    const slotTarget = clampRating(target + ADAPTIVE_TARGET_OFFSETS[(slot - start) % ADAPTIVE_TARGET_OFFSETS.length]);
+    const candidate = findAdaptiveCandidate(slotTarget, start, reserved);
+    if (!candidate) break;
+    const candidateIndex = session.puzzleIndexById.get(candidate.id);
+    if (!Number.isInteger(candidateIndex) || candidateIndex < start) continue;
+    swapPuzzleSlots(slot, candidateIndex);
+    reserved.add(candidate.id);
+  }
+}
+
+function findAdaptiveCandidate(target, minIndex, reserved) {
+  const center = lowerBoundPuzzleRating(target);
+  const canUse = (puzzle) => {
+    if (!puzzle || reserved.has(puzzle.id)) return false;
+    const index = session.puzzleIndexById.get(puzzle.id);
+    if (!Number.isInteger(index) || index < minIndex) return false;
+    return session.solvedIds.size >= PUZZLE_IDS.size || !session.solvedIds.has(puzzle.id);
+  };
+
+  for (let offset = 0; offset < RATING_SORTED_PUZZLES.length; offset += 1) {
+    const upper = RATING_SORTED_PUZZLES[center + offset];
+    if (canUse(upper)) return upper;
+
+    const lower = RATING_SORTED_PUZZLES[center - offset - 1];
+    if (canUse(lower)) return lower;
+  }
+
+  return null;
+}
+
+function lowerBoundPuzzleRating(rating) {
+  let low = 0;
+  let high = RATING_SORTED_PUZZLES.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (RATING_SORTED_PUZZLES[mid].rating < rating) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
+function swapPuzzleSlots(a, b) {
+  if (a === b) {
+    resetPuzzleSlot(a);
+    return;
+  }
+
+  const first = session.puzzles[a];
+  const second = session.puzzles[b];
+  session.puzzles[a] = second;
+  session.puzzles[b] = first;
+  if (second) session.puzzleIndexById.set(second.id, a);
+  if (first) session.puzzleIndexById.set(first.id, b);
+  resetPuzzleSlot(a);
+  resetPuzzleSlot(b);
+}
+
+function resetPuzzleSlot(index) {
+  if (index === session.active) return;
+  unmountBoard(index);
+  session.panels[index]?.remove();
+  delete session.panels[index];
+  session.states[index] = null;
+  session.cached.delete(index);
+  session.mounted.delete(index);
+}
+
+function rebuildPuzzleIndex() {
+  session.puzzleIndexById = new Map();
+  session.puzzles.forEach((puzzle, index) => {
+    if (puzzle) session.puzzleIndexById.set(puzzle.id, index);
+  });
 }
 
 function ensureState(index) {
@@ -884,6 +1009,7 @@ function miss(state, text, squares = []) {
   session.streak = 0;
   session.cleanRun = 0;
   session.flow = Math.max(0, session.flow - 24);
+  adaptUpcomingPuzzles();
   state.panel.classList.remove("shake");
   void state.panel.offsetWidth;
   state.panel.classList.add("shake");
@@ -915,6 +1041,7 @@ function solve(state) {
     session.streak = 0;
     session.cleanRun = 0;
     session.flow = Math.max(0, session.flow - 8);
+    adaptUpcomingPuzzles();
     markFeedback(state, "Practice");
     updateDock();
     saveState();
@@ -926,6 +1053,7 @@ function solve(state) {
 
   if (alreadyCounted) {
     session.flow = Math.min(100, session.flow + 10);
+    adaptUpcomingPuzzles();
     markFeedback(state, "Solved");
     burst(state);
     updateDock();
@@ -943,6 +1071,7 @@ function solve(state) {
   session.cleanRun = clean ? session.cleanRun + 1 : 0;
   session.flow = Math.min(100, session.flow + 26);
   session.band = Math.round(session.band * 0.82 + state.puzzle.rating * 0.18 + Math.min(session.streak, 8) * 10);
+  adaptUpcomingPuzzles();
   const xp = awardSolveXp(state, clean, usedAnswer);
   const questBonus = updateQuest(clean);
   markFeedback(state, clean ? `+${xp + questBonus} XP` : `+${xp} XP`);
@@ -1172,6 +1301,7 @@ function setActive(index) {
   session.active = index;
   session.lastPuzzleId = session.puzzles[session.active]?.id || "";
   session.selected = null;
+  adaptUpcomingPuzzles();
   renderNearby(session.active);
   const state = ensureState(session.active);
   if (state) {
@@ -1223,6 +1353,7 @@ function revealActive() {
   state.selected = null;
   state.badSquares = [];
   session.flow = Math.max(0, session.flow - 10);
+  adaptUpcomingPuzzles();
   state.panel.classList.remove("replying");
   state.panel.classList.add("revealed");
   renderBoard(state);
@@ -1259,6 +1390,7 @@ function skipActive() {
   state.panel.classList.remove("select", "shake", "replying");
   renderBoard(state);
   session.flow = Math.max(0, session.flow - 6);
+  adaptUpcomingPuzzles();
   markFeedback(state, "Skipped");
   updateDock();
   saveState();
@@ -1433,6 +1565,8 @@ async function boot() {
     try {
       applySavedState(await readSavedState());
     } catch {}
+  } else {
+    applyPerfOverrides();
   }
 
   buildFeed();
@@ -1453,6 +1587,9 @@ async function loadPuzzles() {
   for (const puzzle of PUZZLES) {
     if (typeof puzzle.id === "string") PUZZLE_IDS.add(puzzle.id);
   }
+  RATING_SORTED_PUZZLES = [...PUZZLES].sort((a, b) => a.rating - b.rating || b.popularity - a.popularity);
+  MIN_PUZZLE_RATING = RATING_SORTED_PUZZLES[0]?.rating || MIN_PUZZLE_RATING;
+  MAX_PUZZLE_RATING = RATING_SORTED_PUZZLES[RATING_SORTED_PUZZLES.length - 1]?.rating || MAX_PUZZLE_RATING;
 }
 
 function normalizePuzzle(puzzle) {
@@ -1477,12 +1614,21 @@ function normalizePuzzle(puzzle) {
 }
 
 function publishPerfSnapshot() {
+  const upcomingRatings = session.puzzles.slice(session.active + 1, session.active + 13).map((puzzle) => puzzle.rating);
   const snapshot = Object.freeze({
     readyMs: Math.round(performance.now() - bootStartedAt),
     puzzles: session.puzzles.length,
     mountedBoards: session.mounted.size,
     liveReels: document.querySelectorAll(".reel").length,
-    nodes: document.querySelectorAll("*").length
+    nodes: document.querySelectorAll("*").length,
+    adaptive: {
+      target: adaptiveTargetRating(),
+      streak: session.streak,
+      band: session.band,
+      flow: session.flow,
+      upcomingAverage: average(upcomingRatings),
+      upcomingRatings
+    }
   });
 
   document.documentElement.dataset.readyMs = String(snapshot.readyMs);
@@ -1494,6 +1640,24 @@ function publishPerfSnapshot() {
   try {
     window.__chesstokPerf = snapshot;
   } catch {}
+}
+
+function applyPerfOverrides() {
+  const params = new URLSearchParams(window.location.search);
+  session.streak = perfIntegerParam(params, "streak", session.streak, 0, 1000);
+  session.bestStreak = Math.max(session.bestStreak, session.streak);
+  session.cleanRun = Math.min(session.streak, perfIntegerParam(params, "clean", session.cleanRun, 0, 1000));
+  session.band = perfIntegerParam(params, "band", session.band, MIN_PUZZLE_RATING, MAX_PUZZLE_RATING);
+  session.flow = perfIntegerParam(params, "flow", session.flow, 0, 100);
+}
+
+function perfIntegerParam(params, key, fallback, min, max) {
+  return params.has(key) ? safeInteger(params.get(key), fallback, min, max) : fallback;
+}
+
+function average(values) {
+  if (!values.length) return 0;
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
 }
 
 function registerServiceWorker() {

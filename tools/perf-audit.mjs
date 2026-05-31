@@ -84,7 +84,23 @@ try {
     results.push({ viewport, before, jump });
   }
 
-  console.log(JSON.stringify({ puzzleBytes, results }, null, 2));
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 2,
+    mobile: true
+  });
+  const adaptiveLow = await adaptiveSnapshot(cdp, appPort, { streak: 0, band: 1200, flow: 18 });
+  const adaptiveHigh = await adaptiveSnapshot(cdp, appPort, { streak: 9, band: 1200, flow: 88 });
+
+  if (adaptiveHigh.target <= adaptiveLow.target + 320) {
+    errors.push(`adaptive target only increased from ${adaptiveLow.target} to ${adaptiveHigh.target}`);
+  }
+  if (adaptiveHigh.upcomingAverage <= adaptiveLow.upcomingAverage + 220) {
+    errors.push(`adaptive feed average only increased from ${adaptiveLow.upcomingAverage} to ${adaptiveHigh.upcomingAverage}`);
+  }
+
+  console.log(JSON.stringify({ puzzleBytes, results, adaptive: { low: adaptiveLow, high: adaptiveHigh } }, null, 2));
   await cdp.close();
 } finally {
   chrome.kill("SIGTERM");
@@ -139,6 +155,25 @@ async function waitReady(cdp) {
     await delay(100);
   }
   throw new Error("Timed out waiting for app");
+}
+
+async function adaptiveSnapshot(cdp, appPort, profile) {
+  await cdp
+    .send("Storage.clearDataForOrigin", {
+      origin: `http://127.0.0.1:${appPort}`,
+      storageTypes: "all"
+    })
+    .catch(() => {});
+
+  const params = new URLSearchParams({
+    perf: `adaptive-${profile.streak}`,
+    streak: String(profile.streak),
+    band: String(profile.band),
+    flow: String(profile.flow)
+  });
+  await navigate(cdp, `http://127.0.0.1:${appPort}/?${params}`);
+  await waitReady(cdp);
+  return evaluate(cdp, "window.__chesstokPerf.adaptive");
 }
 
 async function waitForHttp(url) {
