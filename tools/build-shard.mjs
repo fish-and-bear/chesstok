@@ -5,12 +5,13 @@ import { TextDecoder } from "node:util";
 const args = parseArgs(process.argv.slice(2));
 
 if (!args.input) {
-  console.error("Usage: node build-shard.mjs lichess_db_puzzle.csv [--limit 5000] [--out puzzles.js]");
+  console.error("Usage: node build-shard.mjs lichess_db_puzzle.csv [--limit 5000] [--out puzzles.js] [--format compact|full]");
   process.exit(1);
 }
 
 const limit = Number(args.limit || 5000);
 const out = args.out || "puzzles.js";
+const format = args.format || "compact";
 const minRating = Number(args["min-rating"] || 0);
 const maxRating = Number(args["max-rating"] || 4000);
 const minPopularity = Number(args["min-popularity"] || -100);
@@ -40,7 +41,10 @@ rows.length = Math.min(rows.length, limit);
 
 rows.sort((a, b) => b.popularity - a.popularity || b.plays - a.plays || a.rating - b.rating);
 
-const body = `export const PUZZLES = ${JSON.stringify(rows, null, 2)};\n`;
+const body =
+  format === "full"
+    ? `export const PUZZLES = ${JSON.stringify(rows, null, 2)};\n`
+    : `export const PUZZLE_FIELDS = ["id","fen","moves","rating","popularity"];\nexport const PUZZLES = ${JSON.stringify(rows.map(toCompactRow))};\n`;
 fs.writeFileSync(out, body);
 console.log(`Wrote ${rows.length} puzzles to ${out}`);
 
@@ -169,4 +173,8 @@ function parseLichessRow(line) {
     opening,
     ratingDeviation: Number(ratingDeviation)
   };
+}
+
+function toCompactRow(row) {
+  return [row.id, row.fen, row.moves, row.rating, row.popularity];
 }

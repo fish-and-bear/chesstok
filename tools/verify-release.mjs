@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const errors = [];
+const PUZZLE_BUDGET_BYTES = 1_200_000;
 
 checkRequiredFiles();
 checkSyntax("app.js");
@@ -12,6 +13,7 @@ checkSyntax("service-worker.js");
 checkSyntax("worker.js");
 checkSyntax("tools/build-public.mjs");
 checkSyntax("tools/build-shard.mjs");
+checkSyntax("tools/perf-audit.mjs");
 checkJson("package.json");
 checkJson("manifest.webmanifest");
 checkJson("vercel.json");
@@ -53,6 +55,7 @@ function checkRequiredFiles() {
     "vercel.json",
     "tools/build-public.mjs",
     "tools/build-shard.mjs",
+    "tools/perf-audit.mjs",
     "tools/verify-release.mjs"
   ]) {
     if (!fs.existsSync(resolve(file))) fail(`Missing ${file}`);
@@ -74,6 +77,9 @@ function checkJson(file) {
 
 async function checkPuzzleShard() {
   try {
+    const size = fs.statSync(resolve("puzzles.js")).size;
+    if (size > PUZZLE_BUDGET_BYTES) fail(`puzzles.js is ${size} bytes; budget is ${PUZZLE_BUDGET_BYTES}`);
+
     const moduleUrl = `${pathToFileURL(resolve("puzzles.js")).href}?verify=${Date.now()}`;
     const { PUZZLES } = await import(moduleUrl);
     if (!Array.isArray(PUZZLES)) {
@@ -84,14 +90,33 @@ async function checkPuzzleShard() {
 
     const ids = new Set();
     for (const [index, puzzle] of PUZZLES.entries()) {
-      if (!puzzle?.id || ids.has(puzzle.id)) fail(`Puzzle ${index} has a missing or duplicate id`);
-      ids.add(puzzle.id);
-      if (!puzzle.fen || !puzzle.moves || !Number.isFinite(puzzle.rating)) fail(`Puzzle ${puzzle.id || index} is missing core fields`);
+      const normalized = normalizePuzzle(puzzle);
+      if (!normalized.id || ids.has(normalized.id)) fail(`Puzzle ${index} has a missing or duplicate id`);
+      ids.add(normalized.id);
+      if (!normalized.fen || !normalized.moves || !Number.isFinite(normalized.rating)) fail(`Puzzle ${normalized.id || index} is missing core fields`);
       if (index > 200) break;
     }
   } catch (error) {
     fail(`Could not import puzzles.js: ${error.message}`);
   }
+}
+
+function normalizePuzzle(puzzle) {
+  if (Array.isArray(puzzle)) {
+    return {
+      id: puzzle[0],
+      fen: puzzle[1],
+      moves: puzzle[2],
+      rating: puzzle[3]
+    };
+  }
+
+  return {
+    id: puzzle?.id,
+    fen: puzzle?.fen,
+    moves: puzzle?.moves,
+    rating: puzzle?.rating
+  };
 }
 
 function checkIndex() {
@@ -142,7 +167,7 @@ function checkSourceHygiene() {
     if (app.includes(blocked)) fail(`app.js should not use ${blocked}`);
   }
 
-  for (const stale of ["rankLabel", "questLabel", "progressLabel", "intentLabel", "move-rush-v8", "?v=8"]) {
+  for (const stale of ["rankLabel", "questLabel", "progressLabel", "intentLabel", "move-rush-v8", "?v=8", "move-rush-v13", "?v=13"]) {
     if (`${app}\n${index}\n${styles}\n${read("service-worker.js")}`.includes(stale)) fail(`Found stale UI/build token ${stale}`);
   }
 
@@ -156,7 +181,9 @@ function checkDocs() {
   if (!notice.includes("CC0") || !notice.includes("database.lichess.org")) fail("NOTICE must attribute the Lichess CC0 puzzle source");
   if (!notice.includes("BSD-2-Clause")) fail("NOTICE must mention the chess.js BSD-2-Clause license");
   if (!pkg.scripts?.build?.includes("build-public")) fail("package.json should expose npm run build");
+  if (!pkg.scripts?.perf?.includes("perf-audit")) fail("package.json should expose npm run perf");
   if (!readme.includes("npm run check")) fail("README should document the release check");
+  if (!readme.includes("npm run perf")) fail("README should document the performance audit");
   if (!readme.includes("server-side scoring")) fail("README should state the client-side anti-cheat limit");
 }
 

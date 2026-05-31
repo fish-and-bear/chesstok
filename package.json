@@ -8,6 +8,7 @@
   "scripts": {
     "build": "node tools/build-public.mjs",
     "check": "node tools/verify-release.mjs",
+    "perf": "node tools/perf-audit.mjs",
     "preview": "python3 -m http.server 8899 --bind 127.0.0.1 --directory .",
     "preview:dist": "npm run build && python3 -m http.server 8899 --bind 127.0.0.1 --directory dist"
   },

@@ -16,11 +16,16 @@ You can also serve the folder with any static server.
 
 ```sh
 npm run check
+npm run perf
 npm run build
 ```
 
 The release check validates syntax, JSON, PWA assets, security headers, puzzle
 shard shape, cache versions, and obvious stale UI tokens.
+
+The performance audit opens the app in mobile Chrome, checks the puzzle payload
+budget, jumps 500 reels deep, and fails if the feed mounts too many boards or
+DOM nodes.
 
 ## Deploy
 
@@ -41,15 +46,18 @@ The bundled `puzzles.js` shard contains 10,000 puzzles generated from the
 Lichess puzzle database. Lichess publishes that database under CC0:
 https://database.lichess.org/#puzzles
 
-Each puzzle keeps the fields the app needs: `FEN`, `Moves`, `Rating`,
-`Popularity`, `NbPlays`, `Themes`, and opening text. The board applies the first
-UCI move before showing the position, matching the Lichess puzzle database rule.
+The shipped shard uses compact rows: `id`, `fen`, `moves`, `rating`, and
+`popularity`. The board applies the first UCI move before showing the position,
+matching the Lichess puzzle database rule.
 
 To build a shard from an extracted `lichess_db_puzzle.csv`:
 
 ```sh
 node tools/build-shard.mjs /path/to/lichess_db_puzzle.csv --limit 10000 --out puzzles.js
 ```
+
+Use `--format full` only for debugging. The default compact format is what the
+app expects in production.
 
 The builder can read `lichess_db_puzzle.csv.zst` directly when `fzstd` is
 available:

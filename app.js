@@ -9,7 +9,9 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king"
 };
-const PIECE_SPRITE = "./pieces.svg";
+const ASSET_VERSION = "14";
+const PIECE_SPRITE = `./pieces.svg?v=${ASSET_VERSION}`;
+const PUZZLE_MODULE = `./puzzles.js?v=${ASSET_VERSION}`;
 
 let PUZZLES = [];
 
@@ -54,8 +56,10 @@ const saveButton = document.querySelector("#saveButton");
 const resetButton = document.querySelector("#resetButton");
 const flowFill = document.querySelector("#flowFill");
 const comboToast = document.querySelector("#comboToast");
+const saveIcon = saveButton.querySelector("span");
 
 document.documentElement.dataset.moveRush = "loading";
+const bootStartedAt = performance.now();
 
 const session = {
   active: 0,
@@ -104,6 +108,10 @@ let scrollSettleTimer = 0;
 let lastScrollTop = 0;
 let lastScrollDirection = 0;
 let resizeTimer = 0;
+let lastTitleText = "";
+let lastStreakText = "";
+let lastSolvedText = "";
+let lastLineKey = "";
 
 async function readSavedState() {
   const localSnapshot = readLocalSnapshot();
@@ -385,11 +393,14 @@ function preparePuzzle(puzzle, index) {
     });
   }
 
+  const orientation = game.turn();
+
   return {
     puzzle,
     index,
     game,
     startFen: game.fen(),
+    orientation,
     moves,
     cursor: 1,
     selected: null,
@@ -402,7 +413,13 @@ function preparePuzzle(puzzle, index) {
     lastSquares: [firstMove.from, firstMove.to],
     solution,
     panel: null,
-    board: null
+    board: null,
+    pulse: null,
+    floaters: null,
+    feedback: null,
+    squareNodes: null,
+    squareOrder: [],
+    boardOrientation: ""
   };
 }
 
@@ -497,6 +514,9 @@ function mountBoard(state) {
   boardWrap.append(board, pulse, floaters, advance, feedback);
   state.panel.replaceChildren(boardWrap);
   state.board = board;
+  state.pulse = pulse;
+  state.floaters = floaters;
+  state.feedback = feedback;
   session.mounted.add(state.index);
   syncPanelStateClasses(state);
   renderBoard(state);
@@ -510,6 +530,12 @@ function unmountBoard(index) {
   if (session.panels[index] === state.panel) delete session.panels[index];
   state.board = null;
   state.panel = null;
+  state.pulse = null;
+  state.floaters = null;
+  state.feedback = null;
+  state.squareNodes = null;
+  state.squareOrder = [];
+  state.boardOrientation = "";
   session.mounted.delete(index);
 }
 
@@ -612,7 +638,7 @@ function syncPanelStateClasses(state) {
 }
 
 function orientationFor(state) {
-  return state.game.turn();
+  return state.orientation;
 }
 
 function squareOrder(orientation) {
@@ -625,62 +651,85 @@ function renderBoard(state) {
   if (!state.board) return;
 
   const orientation = orientationFor(state);
-  const squares = squareOrder(orientation);
-  const orderedFiles = orientation === "b" ? [...FILES].reverse() : FILES;
-  const orderedRanks = orientation === "b" ? [...RANKS].reverse() : RANKS;
-  const leftFile = orderedFiles[0];
-  const bottomRank = orderedRanks[orderedRanks.length - 1];
+  if (state.boardOrientation !== orientation || !state.squareNodes) buildBoardGrid(state, orientation);
+
   const activeColor = state.game.turn();
   const targets = selectedTargets(state);
+  const lastSquares = new Set(state.lastSquares);
+  const badSquares = new Set(state.badSquares);
 
-  state.board.replaceChildren(
-    ...squares.map((square) => {
-      const piece = state.game.get(square);
-      const isLight = (FILES.indexOf(square[0]) + Number(square[1])) % 2 === 1;
-      const target = targets.get(square);
-      const button = document.createElement("button");
-      button.className = "square";
-      button.classList.add(isLight ? "light" : "dark");
-      button.classList.toggle("selected", state.selected === square);
-      button.classList.toggle("last", state.lastSquares.includes(square));
-      button.classList.toggle("bad", state.badSquares.includes(square));
-      button.classList.toggle("can-move", Boolean(piece && piece.color === activeColor));
-      button.classList.toggle("target", Boolean(target));
-      button.classList.toggle("capture", Boolean(target?.captured));
-      button.type = "button";
-      button.setAttribute("role", "gridcell");
-      button.dataset.square = square;
-      button.setAttribute(
-        "aria-label",
-        piece ? `${piece.color === "w" ? "White" : "Black"} ${PIECE_NAMES[piece.type]} on ${square}` : square
-      );
+  for (const square of state.squareOrder) {
+    const nodes = state.squareNodes.get(square);
+    const piece = state.game.get(square);
+    const target = targets.get(square);
+    const classes = ["square", nodes.isLight ? "light" : "dark"];
 
-      if (target) {
-        const marker = document.createElement("span");
-        marker.className = target.captured ? "move-target capture-target" : "move-target dot-target";
-        marker.setAttribute("aria-hidden", "true");
-        button.append(marker);
-      }
+    if (state.selected === square) classes.push("selected");
+    if (lastSquares.has(square)) classes.push("last");
+    if (badSquares.has(square)) classes.push("bad");
+    if (piece && piece.color === activeColor) classes.push("can-move");
+    if (target) classes.push("target");
+    if (target?.captured) classes.push("capture");
 
-      if (piece) {
-        const pieceLabel = document.createElement("span");
-        pieceLabel.className = "piece";
-        pieceLabel.append(createPieceSvg(piece));
-        button.append(pieceLabel);
-      }
+    nodes.button.className = classes.join(" ");
+    nodes.button.setAttribute(
+      "aria-label",
+      piece ? `${piece.color === "w" ? "White" : "Black"} ${PIECE_NAMES[piece.type]} on ${square}` : square
+    );
 
-      const fileCoord = document.createElement("span");
-      fileCoord.className = "coord file";
-      fileCoord.textContent = square[1] === bottomRank ? square[0] : "";
+    nodes.marker.hidden = !target;
+    if (target) nodes.marker.className = target.captured ? "move-target capture-target" : "move-target dot-target";
 
-      const rankCoord = document.createElement("span");
-      rankCoord.className = "coord rank";
-      rankCoord.textContent = square[0] === leftFile ? square[1] : "";
+    updatePieceNode(nodes, piece);
+  }
+}
 
-      button.append(fileCoord, rankCoord);
-      return button;
-    })
-  );
+function buildBoardGrid(state, orientation) {
+  const nodesBySquare = new Map();
+  const fragment = document.createDocumentFragment();
+  const squares = squareOrder(orientation);
+
+  for (const square of squares) {
+    const button = document.createElement("button");
+    const marker = document.createElement("span");
+    const pieceLabel = document.createElement("span");
+
+    button.type = "button";
+    button.className = "square";
+    button.setAttribute("role", "gridcell");
+    button.dataset.square = square;
+
+    marker.className = "move-target";
+    marker.hidden = true;
+    marker.setAttribute("aria-hidden", "true");
+
+    pieceLabel.className = "piece";
+    pieceLabel.hidden = true;
+
+    button.append(marker, pieceLabel);
+    fragment.append(button);
+    nodesBySquare.set(square, {
+      button,
+      marker,
+      pieceLabel,
+      pieceId: "",
+      isLight: (FILES.indexOf(square[0]) + Number(square[1])) % 2 === 1
+    });
+  }
+
+  state.board.replaceChildren(fragment);
+  state.squareNodes = nodesBySquare;
+  state.squareOrder = squares;
+  state.boardOrientation = orientation;
+}
+
+function updatePieceNode(nodes, piece) {
+  const pieceId = piece ? `${piece.color}${piece.type}` : "";
+  if (nodes.pieceId === pieceId) return;
+
+  nodes.pieceId = pieceId;
+  nodes.pieceLabel.hidden = !piece;
+  nodes.pieceLabel.replaceChildren(...(piece ? [createPieceSvg(piece)] : []));
 }
 
 function createPieceSvg(piece) {
@@ -877,16 +926,17 @@ function solve(state) {
 }
 
 function markFeedback(state, text) {
-  const feedback = state.panel.querySelector(".feedback");
+  const feedback = state.feedback;
   if (!feedback) return;
   feedback.textContent = text;
   feedback.classList.remove("pop");
+  if (!text) return;
   void feedback.offsetWidth;
   feedback.classList.add("pop");
 }
 
 function burst(state) {
-  const pulse = state.panel.querySelector(".pulse");
+  const pulse = state.pulse;
   if (!pulse) return;
   pulse.replaceChildren();
   for (let i = 0; i < 14; i += 1) {
@@ -899,7 +949,7 @@ function burst(state) {
 }
 
 function floatCue(state, text, tone = "good") {
-  const layer = state.panel.querySelector(".floaters");
+  const layer = state.floaters;
   if (!layer) return;
   const cue = document.createElement("span");
   cue.className = `float-cue ${tone}`;
@@ -1017,22 +1067,39 @@ function updateDock() {
   if (!state) return;
   const puzzle = state.puzzle;
   const side = state.game.turn() === "w" ? "White" : "Black";
+  const nextTitle = state.solved ? "Solved" : `${side} to move`;
+  const nextStreak = String(session.streak);
+  const nextSolved = String(session.solved);
+  const favorite = session.favorites.has(puzzle.id);
 
-  title.textContent = state.solved ? "Solved" : `${side} to move`;
-  streakValue.textContent = session.streak;
-  solvedValue.textContent = session.solved;
+  if (lastTitleText !== nextTitle) {
+    title.textContent = nextTitle;
+    lastTitleText = nextTitle;
+  }
+  if (lastStreakText !== nextStreak) {
+    streakValue.textContent = nextStreak;
+    lastStreakText = nextStreak;
+  }
+  if (lastSolvedText !== nextSolved) {
+    solvedValue.textContent = nextSolved;
+    lastSolvedText = nextSolved;
+  }
   flowFill.style.transform = `scaleX(${Math.max(0.04, session.flow / 100)})`;
   document.body.classList.toggle("rush-mode", isRush());
-  saveButton.classList.toggle("active", session.favorites.has(puzzle.id));
-  saveButton.setAttribute("aria-pressed", session.favorites.has(puzzle.id) ? "true" : "false");
-  saveButton.querySelector("span").textContent = session.favorites.has(puzzle.id) ? "\u2605" : "\u2606";
+  saveButton.classList.toggle("active", favorite);
+  saveButton.setAttribute("aria-pressed", favorite ? "true" : "false");
+  if (saveIcon) saveIcon.textContent = favorite ? "\u2605" : "\u2606";
   revealButton.disabled = state.solved;
   revealButton.setAttribute("aria-disabled", state.solved ? "true" : "false");
 
   const showLine = state.revealed || state.solved;
+  const lineKey = showLine ? `${puzzle.id}:${state.solution.length}` : "";
   dock.classList.toggle("has-line", showLine);
   lineList.classList.toggle("visible", showLine);
-  lineList.replaceChildren(...(showLine ? state.solution.map((move, index) => createLineItem(move.san, index + 1)) : []));
+  if (lineKey !== lastLineKey) {
+    lineList.replaceChildren(...(showLine ? state.solution.map((move, index) => createLineItem(move.san, index + 1)) : []));
+    lastLineKey = lineKey;
+  }
 }
 
 function createLineItem(san, number) {
@@ -1125,11 +1192,14 @@ function resetActive() {
   const fresh = preparePuzzle(old.puzzle, old.index);
   fresh.panel = old.panel;
   fresh.board = old.board;
+  fresh.pulse = old.pulse;
+  fresh.floaters = old.floaters;
+  fresh.feedback = old.feedback;
   fresh.activatedAt = performance.now();
   session.states[session.active] = fresh;
   old.panel.classList.remove("solved", "revealed", "shake", "select", "hit", "replying");
-  old.panel.querySelector(".pulse")?.replaceChildren();
-  old.panel.querySelector(".floaters")?.replaceChildren();
+  old.pulse?.replaceChildren();
+  old.floaters?.replaceChildren();
   markFeedback(fresh, "");
   renderBoard(fresh);
   updateDock();
@@ -1370,15 +1440,57 @@ async function boot() {
   setupPersistence();
   registerServiceWorker();
   document.documentElement.dataset.moveRush = "ready";
+  publishPerfSnapshot();
 }
 
 async function loadPuzzles() {
-  const module = await import("./puzzles.js");
-  PUZZLES = Array.isArray(module.PUZZLES) ? module.PUZZLES : [];
+  const module = await import(PUZZLE_MODULE);
+  PUZZLES = Array.isArray(module.PUZZLES) ? module.PUZZLES.map(normalizePuzzle).filter(Boolean) : [];
   PUZZLE_IDS.clear();
   for (const puzzle of PUZZLES) {
     if (typeof puzzle.id === "string") PUZZLE_IDS.add(puzzle.id);
   }
+}
+
+function normalizePuzzle(puzzle) {
+  if (Array.isArray(puzzle)) {
+    return {
+      id: puzzle[0],
+      fen: puzzle[1],
+      moves: puzzle[2],
+      rating: puzzle[3],
+      popularity: puzzle[4]
+    };
+  }
+
+  if (!puzzle || typeof puzzle !== "object") return null;
+  return {
+    id: puzzle.id,
+    fen: puzzle.fen,
+    moves: puzzle.moves,
+    rating: puzzle.rating,
+    popularity: puzzle.popularity
+  };
+}
+
+function publishPerfSnapshot() {
+  const snapshot = Object.freeze({
+    readyMs: Math.round(performance.now() - bootStartedAt),
+    puzzles: session.puzzles.length,
+    mountedBoards: session.mounted.size,
+    liveReels: document.querySelectorAll(".reel").length,
+    nodes: document.querySelectorAll("*").length
+  });
+
+  document.documentElement.dataset.readyMs = String(snapshot.readyMs);
+  document.documentElement.dataset.puzzles = String(snapshot.puzzles);
+  document.documentElement.dataset.mountedBoards = String(snapshot.mountedBoards);
+  document.documentElement.dataset.liveReels = String(snapshot.liveReels);
+  document.documentElement.dataset.nodes = String(snapshot.nodes);
+
+  try {
+    window.__chesstokPerf = snapshot;
+  } catch {}
 }
 
 function registerServiceWorker() {
